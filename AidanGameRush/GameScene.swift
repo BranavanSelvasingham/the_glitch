@@ -32,8 +32,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private var verticalVelocity: CGFloat = 0
     private var scoreValue: CGFloat = 0
     private var runChips = 0
-    private var bestScore = UserDefaults.standard.integer(forKey: GameConstants.bestScoreKey)
-    private var lifetimeChips = UserDefaults.standard.integer(forKey: GameConstants.lifetimeChipsKey)
+    private var bestScore = GameSaveStore.bestScore
+    private var lifetimeChips = GameSaveStore.lifetimeChips
     private var worldStage = 0
 
     private var obstacleTimer: TimeInterval = 0
@@ -57,6 +57,9 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let gearPreviewMode = ProcessInfo.processInfo.arguments.contains("--gear-preview")
     private let bossPreviewMode = ProcessInfo.processInfo.arguments.contains("--boss-preview")
     private let crashPreviewMode = ProcessInfo.processInfo.arguments.contains("--crash-preview")
+    private let persistenceDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
+        "--persistence-self-test"
+    )
 
     private let baseScrollSpeed: CGFloat = 235
     private let riseAcceleration: CGFloat = 1_260
@@ -88,6 +91,13 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         setWorld(.cloudKingdom, announce: false)
         showTitleScreen()
         layoutScene()
+
+        #if DEBUG
+        if persistenceDiagnosticMode {
+            showPersistenceDiagnosticScreen()
+            return
+        }
+        #endif
 
         if gearPreviewMode {
             run(.sequence([
@@ -162,6 +172,71 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     }
 
     // MARK: - Screens
+
+    #if DEBUG
+    private func showPersistenceDiagnosticScreen() {
+        let result = PersistenceDiagnostics.run()
+        func addDiagnosticLabel(
+            _ text: String,
+            font: String,
+            size: CGFloat,
+            color: UIColor,
+            at position: CGPoint
+        ) {
+            let label = makeLabel(text, size: size, color: color)
+            label.fontName = font
+            label.position = position
+            screenOverlay.addChild(label)
+        }
+
+        phase = .title
+        screenOverlay.removeAllChildren()
+        hudLayer.isHidden = true
+        player.isHidden = true
+
+        let backdrop = SKShapeNode(rectOf: CGSize(width: size.width, height: size.height))
+        backdrop.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        backdrop.fillColor = UIColor(red: 0.06, green: 0.10, blue: 0.19, alpha: 0.95)
+        backdrop.strokeColor = .clear
+        screenOverlay.addChild(backdrop)
+
+        addDiagnosticLabel(
+            result.passed ? "SAVE SYSTEM: PASS" : "SAVE SYSTEM: NEEDS ATTENTION",
+            font: "AvenirNext-Heavy",
+            size: min(46, size.height * 0.085),
+            color: result.passed ? .systemGreen : .systemRed,
+            at: CGPoint(x: size.width / 2, y: size.height * 0.80)
+        )
+
+        let summary = result.passed
+            ? "\(result.checks.count) CHECKS PASSED • REAL SAVE DATA UNTOUCHED"
+            : "\(result.failures.count) CHECKS FAILED • REAL SAVE DATA UNTOUCHED"
+        addDiagnosticLabel(
+            summary,
+            font: "AvenirNext-Bold",
+            size: min(22, size.height * 0.04),
+            color: .white,
+            at: CGPoint(x: size.width / 2, y: size.height * 0.70)
+        )
+
+        let rows = result.passed ? result.checks : result.failures
+        for (index, check) in rows.prefix(13).enumerated() {
+            addDiagnosticLabel(
+                "\(result.passed ? "✓" : "!")  \(check)",
+                font: "AvenirNext-DemiBold",
+                size: min(19, size.height * 0.034),
+                color: result.passed ? UIColor(white: 0.90, alpha: 1) : .systemYellow,
+                at: CGPoint(
+                    x: size.width / 2,
+                    y: size.height * 0.61 - CGFloat(index) * min(28, size.height * 0.043)
+                )
+            )
+        }
+
+        let status = result.passed ? "PASS" : "FAIL: \(result.failures.joined(separator: ", "))"
+        print("PERSISTENCE_SELF_TEST \(status)")
+    }
+    #endif
 
     private func showTitleScreen() {
         phase = .title
@@ -623,7 +698,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         let finalScore = Int(scoreValue)
         if finalScore > bestScore {
             bestScore = finalScore
-            UserDefaults.standard.set(bestScore, forKey: GameConstants.bestScoreKey)
+            GameSaveStore.bestScore = bestScore
         }
 
         GameAudio.shared.play(.crash)
@@ -1251,7 +1326,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         runChips += 1
         lifetimeChips += 1
         scoreValue += 25
-        UserDefaults.standard.set(lifetimeChips, forKey: GameConstants.lifetimeChipsKey)
+        GameSaveStore.lifetimeChips = lifetimeChips
 
         let dailyResult = ProgressStore.addDailyChip()
         if dailyResult.completedNow {

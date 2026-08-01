@@ -81,24 +81,20 @@ enum ProgressStore {
 
     static var selectedBooster: BoosterStyle {
         get {
-            BoosterStyle(
-                rawValue: UserDefaults.standard.integer(forKey: selectedBoosterKey)
-            ) ?? .blueComet
+            selectedBooster(in: .standard)
         }
         set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: selectedBoosterKey)
+            setSelectedBooster(newValue, in: .standard)
         }
     }
 
     static func isAchievementUnlocked(_ achievement: Achievement) -> Bool {
-        UserDefaults.standard.bool(forKey: achievementKey(achievement))
+        isAchievementUnlocked(achievement, in: .standard)
     }
 
     @discardableResult
     static func unlock(_ achievement: Achievement) -> Bool {
-        guard !isAchievementUnlocked(achievement) else { return false }
-        UserDefaults.standard.set(true, forKey: achievementKey(achievement))
-        return true
+        unlock(achievement, in: .standard)
     }
 
     static var unlockedAchievementCount: Int {
@@ -106,13 +102,54 @@ enum ProgressStore {
     }
 
     static var dailyProgress: Int {
-        prepareDailyState()
-        return UserDefaults.standard.integer(forKey: dailyProgressKey)
+        dailyProgress(in: .standard)
     }
 
     static func addDailyChip() -> (progress: Int, completedNow: Bool) {
-        prepareDailyState()
-        let defaults = UserDefaults.standard
+        addDailyChip(in: .standard)
+    }
+
+    static func selectedBooster(in defaults: UserDefaults) -> BoosterStyle {
+        BoosterStyle(rawValue: defaults.integer(forKey: selectedBoosterKey)) ?? .blueComet
+    }
+
+    static func setSelectedBooster(_ booster: BoosterStyle, in defaults: UserDefaults) {
+        defaults.set(booster.rawValue, forKey: selectedBoosterKey)
+    }
+
+    static func isAchievementUnlocked(
+        _ achievement: Achievement,
+        in defaults: UserDefaults
+    ) -> Bool {
+        defaults.bool(forKey: achievementKey(achievement))
+    }
+
+    @discardableResult
+    static func unlock(_ achievement: Achievement, in defaults: UserDefaults) -> Bool {
+        guard !isAchievementUnlocked(achievement, in: defaults) else { return false }
+        defaults.set(true, forKey: achievementKey(achievement))
+        return true
+    }
+
+    static func unlockedAchievementCount(in defaults: UserDefaults) -> Int {
+        Achievement.allCases.filter { isAchievementUnlocked($0, in: defaults) }.count
+    }
+
+    static func dailyProgress(
+        in defaults: UserDefaults,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Int {
+        prepareDailyState(in: defaults, now: now, calendar: calendar)
+        return defaults.integer(forKey: dailyProgressKey)
+    }
+
+    static func addDailyChip(
+        in defaults: UserDefaults,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> (progress: Int, completedNow: Bool) {
+        prepareDailyState(in: defaults, now: now, calendar: calendar)
         let oldProgress = defaults.integer(forKey: dailyProgressKey)
         let newProgress = min(dailyTarget, oldProgress + 1)
         defaults.set(newProgress, forKey: dailyProgressKey)
@@ -128,18 +165,131 @@ enum ProgressStore {
         "AidanGameRush.achievement.\(achievement.rawValue)"
     }
 
-    private static func prepareDailyState() {
-        let defaults = UserDefaults.standard
-        let today = dayIdentifier()
+    private static func prepareDailyState(
+        in defaults: UserDefaults,
+        now: Date,
+        calendar: Calendar
+    ) {
+        let today = dayIdentifier(for: now, calendar: calendar)
         guard defaults.string(forKey: dailyDateKey) != today else { return }
         defaults.set(today, forKey: dailyDateKey)
         defaults.set(0, forKey: dailyProgressKey)
         defaults.set(false, forKey: dailyRewardKey)
     }
 
-    private static func dayIdentifier() -> String {
-        let parts = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+    private static func dayIdentifier(for date: Date, calendar: Calendar) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return "\(parts.year ?? 0)-\(parts.month ?? 0)-\(parts.day ?? 0)"
     }
 }
 
+enum GameSaveStore {
+    static var bestScore: Int {
+        get { bestScore(in: .standard) }
+        set { setBestScore(newValue, in: .standard) }
+    }
+
+    static var lifetimeChips: Int {
+        get { lifetimeChips(in: .standard) }
+        set { setLifetimeChips(newValue, in: .standard) }
+    }
+
+    static func bestScore(in defaults: UserDefaults) -> Int {
+        max(0, defaults.integer(forKey: GameConstants.bestScoreKey))
+    }
+
+    static func setBestScore(_ value: Int, in defaults: UserDefaults) {
+        defaults.set(max(0, value), forKey: GameConstants.bestScoreKey)
+    }
+
+    static func lifetimeChips(in defaults: UserDefaults) -> Int {
+        max(0, defaults.integer(forKey: GameConstants.lifetimeChipsKey))
+    }
+
+    static func setLifetimeChips(_ value: Int, in defaults: UserDefaults) {
+        defaults.set(max(0, value), forKey: GameConstants.lifetimeChipsKey)
+    }
+}
+
+#if DEBUG
+struct PersistenceDiagnosticResult {
+    let passed: Bool
+    let checks: [String]
+    let failures: [String]
+}
+
+enum PersistenceDiagnostics {
+    static func run() -> PersistenceDiagnosticResult {
+        let suiteName = "AidanGameRush.PersistenceDiagnostics.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return PersistenceDiagnosticResult(
+                passed: false,
+                checks: [],
+                failures: ["Could not create isolated save store"]
+            )
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var checks: [String] = []
+        var failures: [String] = []
+
+        func expect(_ condition: @autoclosure () -> Bool, _ name: String) {
+            if condition() {
+                checks.append(name)
+            } else {
+                failures.append(name)
+            }
+        }
+
+        expect(GameSaveStore.bestScore(in: defaults) == 0, "Clean save defaults")
+        GameSaveStore.setBestScore(1_275, in: defaults)
+        GameSaveStore.setLifetimeChips(83, in: defaults)
+        expect(GameSaveStore.bestScore(in: defaults) == 1_275, "Best score round-trip")
+        expect(GameSaveStore.lifetimeChips(in: defaults) == 83, "Chip total round-trip")
+
+        expect(ProgressStore.selectedBooster(in: defaults) == .blueComet, "Default booster")
+        ProgressStore.setSelectedBooster(.royalRocket, in: defaults)
+        expect(ProgressStore.selectedBooster(in: defaults) == .royalRocket, "Gear selection round-trip")
+
+        expect(
+            ProgressStore.unlockedAchievementCount(in: defaults) == 0,
+            "Clean achievement defaults"
+        )
+        expect(ProgressStore.unlock(.firstFlight, in: defaults), "Achievement unlock")
+        expect(!ProgressStore.unlock(.firstFlight, in: defaults), "Duplicate unlock blocked")
+        expect(
+            ProgressStore.unlockedAchievementCount(in: defaults) == 1,
+            "Achievement count round-trip"
+        )
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let dayOne = calendar.date(from: DateComponents(year: 2026, month: 8, day: 1)) ?? Date()
+        let dayTwo = calendar.date(byAdding: .day, value: 1, to: dayOne) ?? dayOne
+
+        expect(
+            ProgressStore.dailyProgress(in: defaults, now: dayOne, calendar: calendar) == 0,
+            "Daily quest starts clean"
+        )
+        var completionCount = 0
+        for _ in 0..<ProgressStore.dailyTarget {
+            let result = ProgressStore.addDailyChip(in: defaults, now: dayOne, calendar: calendar)
+            completionCount += result.completedNow ? 1 : 0
+        }
+        let capped = ProgressStore.addDailyChip(in: defaults, now: dayOne, calendar: calendar)
+        expect(capped.progress == ProgressStore.dailyTarget, "Daily quest caps at target")
+        expect(completionCount == 1 && !capped.completedNow, "Daily reward granted once")
+        expect(
+            ProgressStore.dailyProgress(in: defaults, now: dayTwo, calendar: calendar) == 0,
+            "Daily quest resets next day"
+        )
+
+        return PersistenceDiagnosticResult(
+            passed: failures.isEmpty,
+            checks: checks,
+            failures: failures
+        )
+    }
+}
+#endif
