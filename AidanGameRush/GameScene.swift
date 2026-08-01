@@ -1,5 +1,6 @@
 import SpriteKit
 import UIKit
+import Darwin
 
 final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let backgroundLayer = SKNode()
@@ -26,6 +27,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private var gearCardFrames: [BoosterStyle: CGRect] = [:]
     private var backgroundRoot: SKNode?
     private var backgroundTiles: [SKNode] = []
+    private var worldBackgrounds: [WorldTheme: SKNode] = [:]
+    private var worldBackgroundSize = CGSize.zero
 
     private var lastUpdateTime: TimeInterval = 0
     private var runTime: TimeInterval = 0
@@ -60,6 +63,17 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let persistenceDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
         "--persistence-self-test"
     )
+    private let performanceDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
+        "--performance-probe"
+    )
+
+    #if DEBUG
+    private var performanceProbeStartTime: TimeInterval?
+    private var performanceProbeLastFrameTime: TimeInterval?
+    private var performanceFrameIntervals: [TimeInterval] = []
+    private var performanceLaunchSeconds: TimeInterval = 0
+    private var performanceProbeFinished = false
+    #endif
 
     private let baseScrollSpeed: CGFloat = 235
     private let riseAcceleration: CGFloat = 1_260
@@ -747,16 +761,36 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private func setWorld(_ world: WorldTheme, announce: Bool) {
         currentWorld = world
         backgroundColor = world.skyColor
-        backgroundLayer.removeAllChildren()
+        prepareWorldBackgroundsIfNeeded()
 
-        let backdrop = WorldArt.makeBackdrop(for: world, size: size)
-        backgroundLayer.addChild(backdrop)
+        for (theme, node) in worldBackgrounds {
+            let isActive = theme == world
+            node.isHidden = !isActive
+            node.isPaused = !isActive
+        }
+        guard let backdrop = worldBackgrounds[world] else { return }
         backgroundRoot = backdrop
         backgroundTiles = backdrop.children.filter { $0.name == "worldTile" }
         worldLabel.text = world.name
 
         if announce {
             showWorldBanner(world)
+        }
+    }
+
+    private func prepareWorldBackgroundsIfNeeded() {
+        guard worldBackgrounds.isEmpty || worldBackgroundSize != size else { return }
+
+        backgroundLayer.removeAllChildren()
+        worldBackgrounds.removeAll()
+        worldBackgroundSize = size
+
+        for world in WorldTheme.allCases {
+            let backdrop = WorldArt.makeBackdrop(for: world, size: size)
+            backdrop.isHidden = true
+            backdrop.isPaused = true
+            backgroundLayer.addChild(backdrop)
+            worldBackgrounds[world] = backdrop
         }
     }
 
@@ -1133,6 +1167,13 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     // MARK: - Update loop
 
     override func update(_ currentTime: TimeInterval) {
+        #if DEBUG
+        if performanceDiagnosticMode {
+            recordPerformanceFrame(at: currentTime)
+            if performanceProbeFinished { return }
+        }
+        #endif
+
         if lastUpdateTime == 0 {
             lastUpdateTime = currentTime
             return
@@ -1174,6 +1215,135 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         }
         updateHUD()
     }
+
+    #if DEBUG
+    private func recordPerformanceFrame(at currentTime: TimeInterval) {
+        guard !performanceProbeFinished else { return }
+
+        if performanceLaunchSeconds == 0 {
+            performanceLaunchSeconds = max(
+                0,
+                ProcessInfo.processInfo.systemUptime - GameLaunchMetrics.processStartTime
+            )
+        }
+        guard phase == .playing else { return }
+
+        guard let startTime = performanceProbeStartTime else {
+            performanceProbeStartTime = currentTime
+            performanceProbeLastFrameTime = currentTime
+            return
+        }
+
+        if let lastFrameTime = performanceProbeLastFrameTime {
+            let interval = currentTime - lastFrameTime
+            let elapsed = currentTime - startTime
+            if elapsed >= 2, interval > 0, interval < 1 {
+                performanceFrameIntervals.append(interval)
+            }
+        }
+        performanceProbeLastFrameTime = currentTime
+
+        if currentTime - startTime >= 22 {
+            finishPerformanceProbe()
+        }
+    }
+
+    private func finishPerformanceProbe() {
+        performanceProbeFinished = true
+        let sortedIntervals = performanceFrameIntervals.sorted()
+        let percentileIndex = min(
+            max(0, Int(Double(max(0, sortedIntervals.count - 1)) * 0.95)),
+            max(0, sortedIntervals.count - 1)
+        )
+        let p95Interval = sortedIntervals.isEmpty ? 0 : sortedIntervals[percentileIndex]
+        let p95FPS = p95Interval > 0 ? 1 / p95Interval : 0
+        let worstInterval = sortedIntervals.last ?? 0
+        let hitchCount = sortedIntervals.filter { $0 > 0.05 }.count
+        let memoryMB = currentResidentMemoryMB()
+        let passed = p95FPS >= 58
+            && worstInterval <= 0.05
+            && performanceLaunchSeconds <= 2
+            && memoryMB <= 250
+
+        phase = .paused
+        gameplayLayer.isPaused = true
+        GameAudio.shared.stopMusic()
+        screenOverlay.removeAllChildren()
+
+        let backdrop = SKShapeNode(rectOf: CGSize(width: size.width, height: size.height))
+        backdrop.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        backdrop.fillColor = UIColor(red: 0.05, green: 0.09, blue: 0.17, alpha: 0.96)
+        backdrop.strokeColor = .clear
+        screenOverlay.addChild(backdrop)
+
+        let title = makeLabel(
+            passed ? "PERFORMANCE PROBE: PASS" : "PERFORMANCE PROBE: NEEDS WORK",
+            size: min(43, size.height * 0.08),
+            color: passed ? .systemGreen : .systemYellow
+        )
+        title.position = CGPoint(x: size.width / 2, y: size.height * 0.80)
+        screenOverlay.addChild(title)
+
+        let subtitle = makeLabel(
+            "20-SECOND FOUR-WORLD + BOSS STRESS RUN • SIMULATOR",
+            size: min(20, size.height * 0.038),
+            color: .white
+        )
+        subtitle.position = CGPoint(x: size.width / 2, y: size.height * 0.69)
+        screenOverlay.addChild(subtitle)
+
+        let rows = [
+            String(format: "95TH-PERCENTILE FPS     %.1f     (TARGET 58–60)", p95FPS),
+            String(format: "WORST FRAME             %.1f ms  (TARGET ≤50 ms)", worstInterval * 1_000),
+            "VISIBLE HITCHES >50 ms    \(hitchCount)       (TARGET 0)",
+            String(format: "LAUNCH TO FIRST FRAME    %.2f s   (TARGET ≤2 s)", performanceLaunchSeconds),
+            String(format: "RESIDENT MEMORY          %.0f MB   (TARGET ≤250 MB)", memoryMB),
+            "MEASURED FRAMES           \(performanceFrameIntervals.count)",
+            "WORLD CYCLE               CLOUD → DINO → CANDY → CASTLE → BOSS"
+        ]
+
+        for (index, row) in rows.enumerated() {
+            let label = makeLabel(row, size: min(19, size.height * 0.035), color: .white)
+            label.fontName = "Menlo-Bold"
+            label.position = CGPoint(
+                x: size.width / 2,
+                y: size.height * 0.57 - CGFloat(index) * min(42, size.height * 0.065)
+            )
+            screenOverlay.addChild(label)
+        }
+
+        let result = String(
+            format: "PERFORMANCE_PROBE %@ p95FPS=%.1f worstMS=%.1f hitches=%d launchS=%.2f memoryMB=%.0f frames=%d",
+            passed ? "PASS" : "FAIL",
+            p95FPS,
+            worstInterval * 1_000,
+            hitchCount,
+            performanceLaunchSeconds,
+            memoryMB,
+            performanceFrameIntervals.count
+        )
+        print(result)
+    }
+
+    private func currentResidentMemoryMB() -> Double {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                task_info(
+                    mach_task_self_,
+                    task_flavor_t(MACH_TASK_BASIC_INFO),
+                    rebound,
+                    &count
+                )
+            }
+        }
+        guard result == KERN_SUCCESS else { return .infinity }
+        return Double(info.resident_size) / 1_048_576
+    }
+    #endif
 
     private func updatePlayer(deltaTime: CGFloat, currentTime: TimeInterval) {
         let acceleration = isBoosting ? riseAcceleration : fallAcceleration

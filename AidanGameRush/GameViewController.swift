@@ -12,6 +12,7 @@ final class GameViewController: UIViewController {
         guard let spriteView = view as? SKView else { return }
         spriteView.ignoresSiblingOrder = true
         spriteView.isMultipleTouchEnabled = false
+        spriteView.preferredFramesPerSecond = 60
 
         let scene = GameScene(size: spriteView.bounds.size)
         scene.scaleMode = .resizeFill
@@ -23,4 +24,3 @@ final class GameViewController: UIViewController {
     override var shouldAutorotate: Bool { true }
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
 }
-

@@ -2,7 +2,7 @@ import AVFoundation
 
 @MainActor
 final class GameAudio {
-    enum Effect {
+    enum Effect: Hashable {
         case begin
         case chip
         case powerUp
@@ -24,7 +24,7 @@ final class GameAudio {
         }
     }
 
-    enum MusicTheme: Equatable {
+    enum MusicTheme: Hashable {
         case title
         case cloudKingdom
         case dinoJungle
@@ -65,6 +65,8 @@ final class GameAudio {
     private var nextEffectPlayer = 0
     private var currentTheme: MusicTheme?
     private var musicPaused = false
+    private var effectBuffers: [Effect: [AVAudioPCMBuffer]] = [:]
+    private var musicBuffers: [MusicTheme: AVAudioPCMBuffer] = [:]
 
     private(set) var isMuted = UserDefaults.standard.bool(forKey: muteKey)
     private(set) var lastMusicPeak: Float = 0
@@ -84,6 +86,8 @@ final class GameAudio {
         try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
         try? AVAudioSession.sharedInstance().setActive(true)
         try? engine.start()
+
+        preloadSynthesizedAudio()
     }
 
     @discardableResult
@@ -102,8 +106,7 @@ final class GameAudio {
         nextEffectPlayer = (nextEffectPlayer + 1) % effectPlayers.count
         player.stop()
 
-        for note in effect.notes {
-            guard let buffer = makeTone(frequency: note.frequency, duration: note.duration) else { continue }
+        for buffer in effectBuffers[effect] ?? [] {
             player.scheduleBuffer(buffer)
         }
         player.play()
@@ -120,7 +123,7 @@ final class GameAudio {
         currentTheme = theme
         musicPaused = false
 
-        guard let buffer = makeMusicBuffer(for: theme) else { return }
+        guard let buffer = musicBuffers[theme] else { return }
         musicPlayer.scheduleBuffer(buffer, at: nil, options: .loops)
         musicPlayer.play()
     }
@@ -154,6 +157,24 @@ final class GameAudio {
         musicPlayer.volume = isMuted ? 0 : 0.16
         for player in effectPlayers {
             player.volume = isMuted ? 0 : 0.72
+        }
+    }
+
+    private func preloadSynthesizedAudio() {
+        let effects: [Effect] = [
+            .begin, .chip, .powerUp, .shieldHit, .crash, .worldChange, .button
+        ]
+        for effect in effects {
+            effectBuffers[effect] = effect.notes.compactMap { note in
+                makeTone(frequency: note.frequency, duration: note.duration)
+            }
+        }
+
+        let themes: [MusicTheme] = [
+            .title, .cloudKingdom, .dinoJungle, .candyCanyon, .storybookCastle, .boss
+        ]
+        for theme in themes {
+            musicBuffers[theme] = makeMusicBuffer(for: theme)
         }
     }
 
