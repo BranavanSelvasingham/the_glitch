@@ -307,3 +307,75 @@ Lighting: warm upper-right adventure lighting matching the reference, crisp edge
 Background: perfectly uniform flat pure green #00FF00 edge-to-edge, no texture, gradient, glow, shadow, halo, vignette, or green reflections.
 Constraints: no words, UI, characters, scenery, weapons, techno circuitry, neon grid, pixel art, photorealism, or watermark.
 ```
+
+## Collectible booster gear
+
+Final files:
+
+- `AidanGameRush/Assets.xcassets/BlueCometBooster.imageset/BlueCometBooster.png`
+- `AidanGameRush/Assets.xcassets/JungleJetBooster.imageset/JungleJetBooster.png`
+- `AidanGameRush/Assets.xcassets/CandyBurstBooster.imageset/CandyBurstBooster.png`
+- `AidanGameRush/Assets.xcassets/RoyalRocketBooster.imageset/RoyalRocketBooster.png`
+
+Original generated files, in style order above:
+
+- `/Users/branavan/.codex/generated_images/019fbd77-a43b-7651-81d0-6462c5d04bd8/exec-30c90ae0-77ee-486c-acd9-a511302e32f3.png`
+- `/Users/branavan/.codex/generated_images/019fbd77-a43b-7651-81d0-6462c5d04bd8/exec-4413e68c-0ca9-4f9d-9e1a-c69894242b5f.png`
+- `/Users/branavan/.codex/generated_images/019fbd77-a43b-7651-81d0-6462c5d04bd8/exec-45dc8bfb-9722-45c8-a86b-94119b102e2e.png`
+- `/Users/branavan/.codex/generated_images/019fbd77-a43b-7651-81d0-6462c5d04bd8/exec-c2067ef6-ffb7-4265-b4c8-7184e2c5e601.png`
+
+Generation method: four separate built-in `image_gen` calls using the key art
+as a style, rendering-quality, and character-world reference only. Blue Comet,
+Candy Burst, and Royal Rocket used a flat green background; Jungle Jet used
+flat magenta to preserve its green body. Backgrounds were removed with the
+bundled `remove_chroma_key.py` helper, and each clean alpha sprite was resized
+from 1024 × 1536 to 512 × 768.
+
+Shared exact prompt:
+
+```text
+Use case: stylized-concept
+Asset type: premium collectible booster-pack sprite for a kid-friendly iPad arcade game's gear menu
+Input image: Image 1 is a style, rendering-quality, and character-world reference only; do not reproduce its composition or characters
+Primary request: Create one standalone wearable rocket booster backpack, with no person attached
+Style/medium: polished high-end 3D animated-family-adventure game asset, rounded toy-like silhouette, expressive but functional, richly modeled materials, crisp readable shape at small size
+Composition/framing: centered single object, three-quarter rear view, vertical orientation, whole object visible, generous padding, no cropping
+Lighting/mood: bright soft studio lighting on the object only, joyful and adventurous
+Constraints: exactly one booster pack; strong silhouette; symmetric overall; two small exhaust nozzles; no character, hands, scenery, particles, flames, smoke, cast shadow, contact shadow, reflection, watermark, logo, letters, numbers, or text
+```
+
+### Blue Comet addition
+
+```text
+Subject: Blue Comet — sleek cobalt-blue enamel body, violet side housings, cyan illuminated trim, silver hardware, a tiny comet-star fin motif with no text
+Scene/backdrop: perfectly flat solid #00ff00 chroma-key background for background removal
+Color palette: cobalt blue, violet, cyan, silver; do not use green anywhere on the object
+Background constraints: one uniform #00ff00 color with no shadows, gradients, texture, reflections, floor plane, or lighting variation; crisp separated edges
+```
+
+### Jungle Jet addition
+
+```text
+Subject: Jungle Jet — adventurous leaf-inspired booster, deep emerald body, warm golden-brass hardware, lime accent fins, subtle carved vine shapes with no text
+Scene/backdrop: perfectly flat solid #ff00ff chroma-key background for background removal
+Color palette: emerald green, lime, warm gold, dark teal; do not use magenta or pink anywhere on the object
+Background constraints: one uniform #ff00ff color with no shadows, gradients, texture, reflections, floor plane, or lighting variation; crisp separated edges
+```
+
+### Candy Burst addition
+
+```text
+Subject: Candy Burst — playful candy-inspired booster, raspberry-pink body, cyan glassy accent panels, cream-white piping, purple fittings, rounded bonbon-like tanks without literal candy or text
+Scene/backdrop: perfectly flat solid #00ff00 chroma-key background for background removal
+Color palette: raspberry pink, cyan, cream white, purple; do not use green anywhere on the object
+Background constraints: one uniform #00ff00 color with no shadows, gradients, texture, reflections, floor plane, or lighting variation; crisp separated edges
+```
+
+### Royal Rocket addition
+
+```text
+Subject: Royal Rocket — majestic fantasy-castle booster, royal-purple enamel body, luminous gold trim, sapphire accents, elegant crown-like top fins with no text
+Scene/backdrop: perfectly flat solid #00ff00 chroma-key background for background removal
+Color palette: royal purple, gold, sapphire blue, silver; do not use green anywhere on the object
+Background constraints: one uniform #00ff00 color with no shadows, gradients, texture, reflections, floor plane, or lighting variation; crisp separated edges
+```

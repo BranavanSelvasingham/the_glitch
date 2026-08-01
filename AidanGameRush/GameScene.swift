@@ -479,29 +479,32 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             card.lineWidth = selected ? 7 : 3
             screenOverlay.addChild(card)
 
-            let booster = SKShapeNode(
-                rectOf: CGSize(width: 62, height: 100),
-                cornerRadius: 20
-            )
-            booster.position.y = 43
-            booster.fillColor = unlocked ? style.bodyColor : UIColor.darkGray
-            booster.strokeColor = unlocked ? style.trailColor : UIColor.gray
-            booster.lineWidth = 5
-            booster.glowWidth = selected ? 6 : 0
-            card.addChild(booster)
+            if selected {
+                let halo = SKShapeNode(ellipseOf: CGSize(width: 126, height: 146))
+                halo.position.y = 44
+                halo.fillColor = style.trailColor.withAlphaComponent(0.13)
+                halo.strokeColor = style.trailColor.withAlphaComponent(0.72)
+                halo.lineWidth = 3
+                halo.glowWidth = 7
+                card.addChild(halo)
+            }
 
-            let flame = SKShapeNode(path: {
-                let path = CGMutablePath()
-                path.move(to: CGPoint(x: -17, y: -48))
-                path.addLine(to: CGPoint(x: 17, y: -48))
-                path.addLine(to: CGPoint(x: 0, y: -95))
-                path.closeSubpath()
-                return path
-            }())
-            flame.fillColor = UIColor(red: 1, green: 0.80, blue: 0.16, alpha: 1)
-            flame.strokeColor = style.trailColor
-            flame.lineWidth = 4
-            booster.addChild(flame)
+            let texture = SKTexture(imageNamed: style.assetName)
+            texture.filteringMode = .linear
+            let booster = SKSpriteNode(texture: texture)
+            booster.name = "gearBooster"
+            booster.position.y = 45
+            booster.size = CGSize(width: 94, height: 141)
+            if !unlocked {
+                booster.color = UIColor(white: 0.22, alpha: 1)
+                booster.colorBlendFactor = 0.86
+                booster.alpha = 0.68
+            }
+            booster.run(.repeatForever(.sequence([
+                .moveBy(x: 0, y: 2.5, duration: 0.75 + Double(index) * 0.04),
+                .moveBy(x: 0, y: -2.5, duration: 0.75 + Double(index) * 0.04)
+            ])))
+            card.addChild(booster)
 
             let name = makeLabel(style.name, size: 16, color: unlocked ? WorldArt.ink : .white)
             name.position.y = -57

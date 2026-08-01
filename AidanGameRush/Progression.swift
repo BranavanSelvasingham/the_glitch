@@ -24,6 +24,15 @@ enum BoosterStyle: Int, CaseIterable {
         }
     }
 
+    var assetName: String {
+        switch self {
+        case .blueComet: "BlueCometBooster"
+        case .jungleJet: "JungleJetBooster"
+        case .candyBurst: "CandyBurstBooster"
+        case .royalRocket: "RoyalRocketBooster"
+        }
+    }
+
     var bodyColor: UIColor {
         switch self {
         case .blueComet: UIColor(red: 0.42, green: 0.20, blue: 0.84, alpha: 1)

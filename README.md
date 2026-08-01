@@ -12,7 +12,7 @@ A native iPad arcade-flight game built with Swift and SpriteKit.
 - Gather Spark Chips and collect shield-bubble and chip-magnet power-ups.
 - See animated boost/glide poses, booster trails, pickup reactions, lively enemies, and dedicated defeat and boss-victory sequences.
 - Defeat The Glitch in a booster-blast boss battle after completing all four worlds.
-- Permanently unlock and equip four booster styles with saved Spark Chips.
+- Permanently unlock and equip four richly illustrated booster styles with saved Spark Chips.
 - Complete a daily chip quest and earn five persistent adventure badges.
 - Chase a persistent high score, pause at any time, and restart instantly.
 - Hear distinct title, world, and boss music plus layered action sounds, with a persistent mute control and pickup/collision haptics.
