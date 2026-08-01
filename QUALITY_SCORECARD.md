@@ -2,10 +2,10 @@
 
 ## Current Iteration
 
-- Build/commit: current-build animation evidence iteration (this commit)
+- Build/commit: smaller-iPad interface-fit iteration (this commit)
 - Date: 2026-08-01
 - Weighted score: **71.7 / 100 (provisional implementation-and-visual audit)**
-- Hard gates: **4 provisional passes, 0 failures, 3 pending**
+- Hard gates: **5 provisional passes, 0 failures, 2 pending**
 
 This score intentionally penalizes missing direct player and physical-device evidence. It is not an enjoyment claim.
 
@@ -13,7 +13,7 @@ This score intentionally penalizes missing direct player and physical-device evi
 
 | Category | Weight | Rating (0–5) | Weighted points | Evidence | Highest-priority gap |
 | --- | ---: | ---: | ---: | --- | --- |
-| Visual composition | 15 | 4.4 | 13.2 | Final actual-scale four-world matrix in `QualityEvidence/Iteration-4-gameplay-art/` | Human rating and a second physical iPad size remain unverified |
+| Visual composition | 15 | 4.4 | 13.2 | Current-build four-world matrices and critical-state captures inspected on iPad A16 and iPad mini simulator sizes | Human rating and physical-iPad inspection remain unverified |
 | Asset richness and consistency | 15 | 4.2 | 12.6 | Production art now covers Aidan, The Glitch/boss, backdrops, barriers, falling hazards, chips, both power-ups, key art, and icon | Gear/menu decoration still relies partly on polished code-native shapes; human consistency rating pending |
 | Animation and game feel | 10 | 3.5 | 7.0 | Fresh nominal-60-fps production-art flight and boss/victory videos plus contact sheets cover boost, glide, aura, pickup, hazards, enemies, hits, victory, and world return; boost input-to-frame measured at 16.3 ms | Human game-feel rating and physical motion inspection remain unverified |
 | Sound and music | 10 | 3.5 | 7.0 | Live probe found 7/7 action sounds and 6/6 music themes cached, maximum scheduling of 10.70 ms, peaks of 0.335/0.377, and correct mute/session behavior | Physical speaker/headphone mix, audible onset, fatigue, theme recognition, and player rating remain unverified |
@@ -21,7 +21,7 @@ This score intentionally penalizes missing direct player and physical-device evi
 | Fairness and pacing | 10 | 3.5 | 7.0 | Live spawners produced the first chip course at 1.82 s and power-up at 8.22 s; 245-point minimum gap leaves 175 points beyond the 70-point player body; worlds change every 24 s | No observed death-attribution or first-run survival data |
 | Fun and replayability | 10 | 1.0 | 2.0 | Gameplay loop exists | No target-player ratings or voluntary-restart evidence |
 | Story and world identity | 5 | 4.3 | 4.3 | Each world now has bespoke illustration, music, obstacles, and falling hazards | Recall and fantasy-vs-techno descriptions are unverified with players |
-| Usability and accessibility | 5 | 3.5 | 3.5 | Persistent ≥44-point controls plus dark HUD contrast panels inspected over bright and dark worlds | Physical readability and uncoached comprehension remain unverified |
+| Usability and accessibility | 5 | 3.5 | 3.5 | Persistent ≥44-point controls plus title, story, gear, pause, game-over, four worlds, both power-ups, and boss inspected on a smaller iPad mini simulator | Physical readability, one-handed observation, and uncoached comprehension remain unverified |
 | Technical quality | 5 | 4.6 | 4.6 | Clean simulator and signed physical-iPad builds; 13/13 save checks; signed update installed; performance targets passed; 100/100 simulator launches reached gameplay and remained alive | Device remained locked during launch; physical Instruments, thermal, lifecycle, and long-session data remain pending |
 
 ## Hard-Gate Status
@@ -30,7 +30,7 @@ This score intentionally penalizes missing direct player and physical-device evi
 | --- | --- | --- |
 | Crash/progression/save integrity | Provisional pass | Clean builds, 13/13 isolated persistence result, and 100/100 simulator sessions with no early exit; physical update/relaunch and long-session tests pending |
 | Collision fairness and readability | Pending | Executable geometry check passes with 175 points of clearance beyond the player body; target-player attribution evidence missing |
-| Interface fit and readability | Pending | Current iPad simulator matrix is legible; second size and physical inspection missing |
+| Interface fit and readability | Provisional pass | No clipping or unreadable critical text found across title, story, gear, pause, game over, all worlds, both power-ups, and boss on iPad A16 and iPad mini simulator sizes; physical inspection pending |
 | Major-action feedback and production assets | Provisional pass | Major-action feedback covers boost, glide, pickup, shield hit, defeat, and boss victory; all normal-play major characters, enemies, hazards, pickups, power-ups, barriers, and worlds now use production art; physical inspection pending |
 | Restart and control clarity | Provisional pass | Production boost and restart paths measured at 16.3 ms and 21.1 ms respectively; uncoached target-player test missing |
 | Audio, privacy, and child safety | Provisional pass | No data collection; live probe passed complete effect/theme coverage, one-frame scheduling, clipping headroom, mute restoration, and ambient mixing; physical listening pending |
@@ -50,4 +50,5 @@ This score intentionally penalizes missing direct player and physical-device evi
 | `1647c27` | Repeated fresh sessions across every world start will expose launch-time or early-game crashes hidden by single-run validation | 100 automated launches; each process checked 1.7 seconds after launch; 25 starts per world | 100/100 processes remained alive with zero failures | +0.2 | Early-game simulator soak is not a physical-device, lifecycle, thermal, or long-duration substitute |
 | `3e60ce3` | Executable timing and geometry checks will establish whether the implementation is responsive and gives players a viable early-game path | Live production input, spawn, collision-geometry, defeat, and restart paths measured in a clean simulator build; clean signed iPad build installed | All seven implementation targets passed: 16.3 ms boost, 1.82 s chip course, 8.22 s power-up, 21.1 ms restart, 175-point excess clearance, and 24 s world cadence | +2.5 | Device remained locked during launch; uncoached comprehension, first-run survival, and death attribution still require target-player observation |
 | `c807b19` | A live audio-system probe will expose missing buffers, slow scheduling, clipping risk, broken mute restoration, or an intrusive session policy | Clean simulator and signed iPad builds; all production effects/themes scheduled; generated buffers scanned; mute round trip and session inspected; result screen directly inspected; signed update installed | All eight implementation checks passed: 7/7 effects, 6/6 themes, 10.70 ms maximum scheduling, 0.335/0.377 peaks, mute restoration, and ambient mixing | +1.4 | Device remained locked during launch; physical audible onset, speaker/headphone balance, fatigue, recognition, and player enjoyment remain unverified |
-| This commit | Fresh current-build footage will show whether the production art preserves the full flight, encounter, and victory motion language previously evidenced only over placeholder scenery | Two current-build simulator recordings and sampled contact sheets directly inspected; existing defeat/pickup evidence cross-checked; prior 16.3 ms input-to-frame result applied | Production footage covers boost/glide, aura, moving hazards, enemy motion, projectiles, boss hits, defeat, victory, and world return without visible animation breakage | +0.2 | Physical motion inspection and target-player game-feel ratings remain unverified |
+| `83857c6` | Fresh current-build footage will show whether the production art preserves the full flight, encounter, and victory motion language previously evidenced only over placeholder scenery | Two current-build simulator recordings and sampled contact sheets directly inspected; existing defeat/pickup evidence cross-checked; prior 16.3 ms input-to-frame result applied | Production footage covers boost/glide, aura, moving hazards, enemy motion, projectiles, boss hits, defeat, victory, and world return without visible animation breakage | +0.2 | Physical motion inspection and target-player game-feel ratings remain unverified |
+| This commit | A complete smaller-iPad capture ledger will reveal clipping, overlap, or unreadable critical states hidden by the larger simulator | Title, story, gear, pause, game over, all four worlds, shield, magnet, and boss directly inspected on iPad mini; clean simulator and signed iPad builds; signed update installed | No visible clipping, overlap, missing control, or unreadable critical text; interface hard gate moves to provisional pass with score held at 71.7 | +0.0 | Device remained locked during launch; physical readability, touch reach, and uncoached comprehension remain unverified |

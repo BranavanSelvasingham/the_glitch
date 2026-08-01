@@ -60,6 +60,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let gearPreviewMode = ProcessInfo.processInfo.arguments.contains("--gear-preview")
     private let bossPreviewMode = ProcessInfo.processInfo.arguments.contains("--boss-preview")
     private let crashPreviewMode = ProcessInfo.processInfo.arguments.contains("--crash-preview")
+    private let pausePreviewMode = ProcessInfo.processInfo.arguments.contains("--pause-preview")
     private let persistenceDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
         "--persistence-self-test"
     )
@@ -793,6 +794,11 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             run(.sequence([
                 .wait(forDuration: 1.8),
                 .run { [weak self] in self?.endRun() }
+            ]))
+        } else if pausePreviewMode {
+            run(.sequence([
+                .wait(forDuration: 1.2),
+                .run { [weak self] in self?.togglePause() }
             ]))
         }
     }
