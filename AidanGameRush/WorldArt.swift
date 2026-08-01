@@ -16,18 +16,30 @@ enum WorldArt {
         sky.zPosition = -40
         root.addChild(sky)
 
-        let softLight = SKShapeNode(circleOfRadius: size.height * 0.33)
-        softLight.position = CGPoint(x: size.width * 0.76, y: size.height * 0.78)
-        softLight.fillColor = UIColor.white.withAlphaComponent(theme == .storybookCastle ? 0.17 : 0.24)
-        softLight.strokeColor = .clear
-        softLight.zPosition = -39
-        root.addChild(softLight)
+        let texture = SKTexture(imageNamed: theme.backdropAssetName)
+        let paintedBackdrop = SKSpriteNode(texture: texture)
+        let sourceSize = texture.size()
+        let aspectFill = max(size.width / sourceSize.width, size.height / sourceSize.height)
+        let horizontalTravel = max(0, (sourceSize.width * aspectFill - size.width) / 2)
+        paintedBackdrop.name = "paintedBackdrop"
+        paintedBackdrop.size = CGSize(width: sourceSize.width * aspectFill, height: sourceSize.height * aspectFill)
+        paintedBackdrop.position = CGPoint(x: size.width / 2 + horizontalTravel, y: size.height / 2)
+        paintedBackdrop.zPosition = -38
+        root.addChild(paintedBackdrop)
+
+        if horizontalTravel > 4 {
+            paintedBackdrop.run(.repeatForever(.sequence([
+                .moveTo(x: size.width / 2 - horizontalTravel, duration: 28),
+                .moveTo(x: size.width / 2 + horizontalTravel, duration: 28)
+            ])))
+        }
 
         for index in 0..<3 {
             let tile = makeSceneryTile(for: theme, size: size, variant: index)
             tile.name = "worldTile"
             tile.position.x = CGFloat(index) * size.width
             tile.zPosition = -20
+            tile.alpha = 0.06
             root.addChild(tile)
         }
         return root

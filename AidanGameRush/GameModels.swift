@@ -16,6 +16,15 @@ enum WorldTheme: Int, CaseIterable {
     case candyCanyon
     case storybookCastle
 
+    var backdropAssetName: String {
+        switch self {
+        case .cloudKingdom: "CloudBackdrop"
+        case .dinoJungle: "DinoBackdrop"
+        case .candyCanyon: "CandyBackdrop"
+        case .storybookCastle: "CastleBackdrop"
+        }
+    }
+
     var name: String {
         switch self {
         case .cloudKingdom: "CLOUD KINGDOM"
