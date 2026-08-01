@@ -66,6 +66,9 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let performanceDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
         "--performance-probe"
     )
+    private let gameplayQualityDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
+        "--gameplay-quality-probe"
+    )
 
     #if DEBUG
     private var performanceProbeStartTime: TimeInterval?
@@ -73,6 +76,17 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private var performanceFrameIntervals: [TimeInterval] = []
     private var performanceLaunchSeconds: TimeInterval = 0
     private var performanceProbeFinished = false
+    private var qualityProbeStartTime: TimeInterval?
+    private var qualityProbeFirstChipSeconds: TimeInterval?
+    private var qualityProbeFirstPowerUpSeconds: TimeInterval?
+    private var qualityProbeInputRequestTime: TimeInterval?
+    private var qualityProbeInputResponseMS: Double?
+    private var qualityProbeRestartRequestTime: TimeInterval?
+    private var qualityProbeRestartResponseMS: Double?
+    private var qualityProbeDidScheduleInput = false
+    private var qualityProbeDidTriggerCrash = false
+    private var qualityProbeDidRestart = false
+    private var qualityProbeFinished = false
     #endif
 
     private let baseScrollSpeed: CGFloat = 235
@@ -654,10 +668,10 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         scoreValue = 0
         runChips = 0
         worldStage = startingWorld
-        obstacleTimer = 1.8
+        obstacleTimer = GameConstants.initialObstacleDelay
         enemyTimer = 4.2
         fallingHazardTimer = 6.3
-        powerUpTimer = 8.2
+        powerUpTimer = GameConstants.initialPowerUpDelay
         shieldTime = demoMode ? 999 : 0
         magnetTime = demoMode ? 999 : 0
         invulnerabilityTime = 1.4
@@ -684,6 +698,13 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             .fadeIn(withDuration: 0.28),
             .scale(to: 1, duration: 0.34)
         ]))
+
+        #if DEBUG
+        if gameplayQualityDiagnosticMode, qualityProbeStartTime == nil {
+            qualityProbeStartTime = ProcessInfo.processInfo.systemUptime
+            scheduleQualityProbeInput()
+        }
+        #endif
 
         if bossPreviewMode {
             run(.sequence([
@@ -732,6 +753,13 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
                 self.gameOverReady = true
                 self.hudLayer.isHidden = true
                 self.showGameOverScreen()
+                #if DEBUG
+                if self.gameplayQualityDiagnosticMode, self.qualityProbeDidTriggerCrash {
+                    self.qualityProbeRestartRequestTime = ProcessInfo.processInfo.systemUptime
+                    self.qualityProbeDidRestart = true
+                    self.startRun()
+                }
+                #endif
             }
         ]))
     }
@@ -1072,7 +1100,10 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private func spawnObstacleCourse() {
         let floorY = lowerFlightLimit - 38
         let ceilingY = upperFlightLimit + 48
-        let gapHeight = max(245, size.height * 0.31 - CGFloat(runTime) * 1.25)
+        let gapHeight = max(
+            GameConstants.minimumObstacleGap,
+            size.height * 0.31 - CGFloat(runTime) * 1.25
+        )
         let minCenter = floorY + gapHeight / 2 + 70
         let maxCenter = ceilingY - gapHeight / 2 - 70
         guard maxCenter > minCenter else { return }
@@ -1098,6 +1129,12 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         addMovingNode(top)
 
         let chipCount = 5
+        #if DEBUG
+        if gameplayQualityDiagnosticMode, qualityProbeFirstChipSeconds == nil,
+           let startTime = qualityProbeStartTime {
+            qualityProbeFirstChipSeconds = ProcessInfo.processInfo.systemUptime - startTime
+        }
+        #endif
         for index in 0..<chipCount {
             let chip = WorldArt.makeChip()
             let arc = sin(CGFloat(index) / CGFloat(chipCount - 1) * .pi) * gapHeight * 0.16
@@ -1145,6 +1182,12 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     }
 
     private func spawnPowerUp() {
+        #if DEBUG
+        if gameplayQualityDiagnosticMode, qualityProbeFirstPowerUpSeconds == nil,
+           let startTime = qualityProbeStartTime {
+            qualityProbeFirstPowerUpSeconds = ProcessInfo.processInfo.systemUptime - startTime
+        }
+        #endif
         let kind: PowerUpKind = Int(runTime / 10).isMultiple(of: 2) ? .shield : .magnet
         let powerUp = WorldArt.makePowerUp(kind)
         powerUp.position = CGPoint(
@@ -1168,6 +1211,10 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
     override func update(_ currentTime: TimeInterval) {
         #if DEBUG
+        if gameplayQualityDiagnosticMode {
+            recordGameplayQualityFrame()
+            if qualityProbeFinished { return }
+        }
         if performanceDiagnosticMode {
             recordPerformanceFrame(at: currentTime)
             if performanceProbeFinished { return }
@@ -1214,7 +1261,143 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             awardAchievement(.highFlyer)
         }
         updateHUD()
+
+        #if DEBUG
+        if gameplayQualityDiagnosticMode,
+           !qualityProbeDidTriggerCrash,
+           qualityProbeFirstPowerUpSeconds != nil,
+           let startTime = qualityProbeStartTime,
+           ProcessInfo.processInfo.systemUptime - startTime >= 9 {
+            qualityProbeDidTriggerCrash = true
+            endRun()
+        }
+        #endif
     }
+
+    #if DEBUG
+    private func scheduleQualityProbeInput() {
+        guard !qualityProbeDidScheduleInput else { return }
+        qualityProbeDidScheduleInput = true
+        run(.sequence([
+            .wait(forDuration: 0.65),
+            .run { [weak self] in
+                guard let self else { return }
+                self.qualityProbeInputRequestTime = ProcessInfo.processInfo.systemUptime
+                self.beginBoostInput(playHaptic: false)
+            }
+        ]))
+    }
+
+    private func recordGameplayQualityFrame() {
+        guard !qualityProbeFinished else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+
+        if let requestTime = qualityProbeInputRequestTime,
+           qualityProbeInputResponseMS == nil,
+           isBoosting {
+            qualityProbeInputResponseMS = (now - requestTime) * 1_000
+        }
+
+        if let restartTime = qualityProbeRestartRequestTime,
+           qualityProbeRestartResponseMS == nil,
+           qualityProbeDidRestart,
+           phase == .playing {
+            qualityProbeRestartResponseMS = (now - restartTime) * 1_000
+        }
+
+        if qualityProbeFirstChipSeconds != nil,
+           qualityProbeFirstPowerUpSeconds != nil,
+           qualityProbeInputResponseMS != nil,
+           qualityProbeRestartResponseMS != nil {
+            showGameplayQualityDiagnosticScreen()
+        }
+    }
+
+    private func showGameplayQualityDiagnosticScreen() {
+        guard
+            !qualityProbeFinished,
+            let chipSeconds = qualityProbeFirstChipSeconds,
+            let powerUpSeconds = qualityProbeFirstPowerUpSeconds,
+            let inputMS = qualityProbeInputResponseMS,
+            let restartMS = qualityProbeRestartResponseMS
+        else { return }
+
+        qualityProbeFinished = true
+        let playerDiameter = GameConstants.playerCollisionRadius * 2
+        let clearance = GameConstants.minimumObstacleGap - playerDiameter
+        let passed = inputMS <= 50
+            && chipSeconds <= 5
+            && powerUpSeconds <= 25
+            && restartMS <= 1_000
+            && clearance >= playerDiameter
+            && (20...30).contains(GameConstants.worldDuration)
+
+        phase = .paused
+        gameplayLayer.isPaused = true
+        GameAudio.shared.stopMusic()
+        screenOverlay.removeAllChildren()
+
+        let backdrop = SKShapeNode(rectOf: CGSize(width: size.width, height: size.height))
+        backdrop.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        backdrop.fillColor = UIColor(red: 0.05, green: 0.09, blue: 0.17, alpha: 0.96)
+        backdrop.strokeColor = .clear
+        screenOverlay.addChild(backdrop)
+
+        let title = makeLabel(
+            passed ? "MECHANICS PROBE: PASS" : "MECHANICS PROBE: NEEDS WORK",
+            size: min(43, size.height * 0.08),
+            color: passed ? .systemGreen : .systemYellow
+        )
+        title.position = CGPoint(x: size.width / 2, y: size.height * 0.82)
+        screenOverlay.addChild(title)
+
+        let subtitle = makeLabel(
+            "LIVE SPAWN • INPUT • COLLISION • RESTART CHECKS",
+            size: min(20, size.height * 0.038),
+            color: .white
+        )
+        subtitle.position = CGPoint(x: size.width / 2, y: size.height * 0.72)
+        screenOverlay.addChild(subtitle)
+
+        let rows = [
+            String(format: "BOOST INPUT TO FRAME      %.1f ms  (TARGET ≤50 ms)", inputMS),
+            String(format: "FIRST CHIP COURSE         %.2f s   (TARGET ≤5 s)", chipSeconds),
+            String(format: "FIRST POWER-UP            %.2f s   (TARGET ≤25 s)", powerUpSeconds),
+            String(format: "RESTART TO PLAY FRAME     %.1f ms  (TARGET ≤1,000 ms)", restartMS),
+            String(format: "MINIMUM GAP               %.0f pt   (PLAYER BODY %.0f pt)", GameConstants.minimumObstacleGap, playerDiameter),
+            String(format: "COLLISION CLEARANCE       %.0f pt   (TARGET ≥%.0f pt)", clearance, playerDiameter),
+            String(format: "WORLD CHANGE              %.0f s    (TARGET 20–30 s)", GameConstants.worldDuration)
+        ]
+        for (index, row) in rows.enumerated() {
+            let label = makeLabel(row, size: min(18, size.height * 0.034), color: .white)
+            label.fontName = "Menlo-Bold"
+            label.position = CGPoint(
+                x: size.width / 2,
+                y: size.height * 0.61 - CGFloat(index) * min(42, size.height * 0.065)
+            )
+            screenOverlay.addChild(label)
+        }
+
+        let caveat = makeLabel(
+            "IMPLEMENTATION PASS • UNCOACHED PLAYER FAIRNESS STILL REQUIRED",
+            size: min(17, size.height * 0.032),
+            color: .systemYellow
+        )
+        caveat.position = CGPoint(x: size.width / 2, y: size.height * 0.11)
+        screenOverlay.addChild(caveat)
+
+        print(String(
+            format: "GAMEPLAY_QUALITY_PROBE %@ inputMS=%.1f chipS=%.2f powerS=%.2f restartMS=%.1f gap=%.0f player=%.0f",
+            passed ? "PASS" : "FAIL",
+            inputMS,
+            chipSeconds,
+            powerUpSeconds,
+            restartMS,
+            GameConstants.minimumObstacleGap,
+            playerDiameter
+        ))
+    }
+    #endif
 
     #if DEBUG
     private func recordPerformanceFrame(at currentTime: TimeInterval) {
@@ -1725,8 +1908,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             } else if pauseButton.contains(point) {
                 togglePause()
             } else {
-                isBoosting = true
-                UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.5)
+                beginBoostInput(playHaptic: true)
             }
         case .paused:
             if handleSoundButton(at: point) {
@@ -1752,6 +1934,13 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         if phase == .playing, !demoMode {
             isBoosting = false
+        }
+    }
+
+    private func beginBoostInput(playHaptic: Bool) {
+        isBoosting = true
+        if playHaptic {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.5)
         }
     }
 

@@ -137,4 +137,8 @@ enum GameConstants {
     static let bestScoreKey = "AidanGameRush.bestScore"
     static let lifetimeChipsKey = "AidanGameRush.lifetimeChips"
     static let worldDuration: TimeInterval = 24
+    static let initialObstacleDelay: TimeInterval = 1.8
+    static let initialPowerUpDelay: TimeInterval = 8.2
+    static let minimumObstacleGap: CGFloat = 245
+    static let playerCollisionRadius: CGFloat = 35
 }

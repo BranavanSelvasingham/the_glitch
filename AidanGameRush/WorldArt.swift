@@ -110,7 +110,10 @@ enum WorldArt {
         magnetAura.zPosition = -5
         player.addChild(magnetAura)
 
-        player.physicsBody = SKPhysicsBody(circleOfRadius: 35, center: CGPoint(x: 0, y: 3))
+        player.physicsBody = SKPhysicsBody(
+            circleOfRadius: GameConstants.playerCollisionRadius,
+            center: CGPoint(x: 0, y: 3)
+        )
         player.physicsBody?.isDynamic = true
         player.physicsBody?.affectedByGravity = false
         player.physicsBody?.allowsRotation = false
