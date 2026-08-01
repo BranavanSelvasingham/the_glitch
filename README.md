@@ -14,7 +14,7 @@ A native iPad arcade-flight game built with Swift and SpriteKit.
 - Permanently unlock and equip four booster styles with saved Spark Chips.
 - Complete a daily chip quest and earn five persistent adventure badges.
 - Chase a persistent high score, pause at any time, and restart instantly.
-- Hear short procedural sound effects and feel pickup/collision haptics.
+- Hear distinct title, world, and boss music plus layered action sounds, with a persistent mute control and pickup/collision haptics.
 
 The four playable worlds are drawn natively in SpriteKit. Original illustrated key art and an app icon give the game a polished identity while keeping gameplay lightweight and responsive.
 

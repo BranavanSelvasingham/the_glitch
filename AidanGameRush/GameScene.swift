@@ -13,6 +13,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let worldLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
     private let powerLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
     private let pauseButton = SKShapeNode()
+    private let soundButton = SKShapeNode()
+    private let menuSoundButton = SKShapeNode()
     private let gearButton = SKShapeNode()
     private let gearBackButton = SKShapeNode()
 
@@ -237,6 +239,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         ])))
         screenOverlay.addChild(prompt)
 
+        addMenuSoundButton(at: CGPoint(x: 96, y: 52))
+        GameAudio.shared.playMusic(.title)
     }
 
     private func showGearScreen() {
@@ -349,6 +353,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         )
         gearBackButton.position = CGPoint(x: size.width / 2, y: size.height * 0.14)
         screenOverlay.addChild(gearBackButton)
+        addMenuSoundButton(at: CGPoint(x: 96, y: 52))
     }
 
     private func showStoryPage(_ page: Int) {
@@ -430,6 +435,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         let prompt = makePill(text: promptText, width: 220, color: currentWorld.accentColor)
         prompt.position = CGPoint(x: panel.frame.width * 0.12, y: -panel.frame.height * 0.34)
         panel.addChild(prompt)
+        addMenuSoundButton(at: CGPoint(x: 96, y: 52))
     }
 
     private func showPauseOverlay() {
@@ -440,7 +446,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         shade.strokeColor = .clear
         screenOverlay.addChild(shade)
 
-        let panel = SKShapeNode(rectOf: CGSize(width: 390, height: 190), cornerRadius: 28)
+        let panel = SKShapeNode(rectOf: CGSize(width: 420, height: 245), cornerRadius: 28)
         panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
         panel.fillColor = UIColor(red: 0.08, green: 0.06, blue: 0.18, alpha: 0.98)
         panel.strokeColor = currentWorld.accentColor
@@ -455,9 +461,11 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         world.position.y = 0
         panel.addChild(world)
 
-        let prompt = makeLabel("Tap pause to keep flying", size: 17, color: .white)
-        prompt.position.y = -48
+        let prompt = makeLabel("Tap pause to keep flying", size: 16, color: .white)
+        prompt.position.y = -37
         panel.addChild(prompt)
+
+        addMenuSoundButton(at: CGPoint(x: size.width / 2, y: size.height / 2 - 82))
     }
 
     private func showGameOverScreen() {
@@ -513,6 +521,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             .scale(to: 0.98, duration: 0.5)
         ])))
         panel.addChild(prompt)
+        addMenuSoundButton(at: CGPoint(x: 96, y: 52))
     }
 
     // MARK: - Game lifecycle
@@ -556,6 +565,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         lastUpdateTime = 0
 
         setWorld(WorldTheme.allCases[startingWorld], announce: true)
+        GameAudio.shared.playMusic(currentWorld.musicTheme)
         updateHUD()
         showToast("HOLD TO BOOST  •  RELEASE TO GLIDE", color: .white, duration: 3.2)
         ProgressStore.unlock(.firstFlight)
@@ -585,6 +595,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         }
 
         GameAudio.shared.play(.crash)
+        GameAudio.shared.stopMusic()
         UINotificationFeedbackGenerator().notificationOccurred(.error)
         showGameOverScreen()
     }
@@ -595,11 +606,13 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             phase = .paused
             isBoosting = false
             gameplayLayer.isPaused = true
+            GameAudio.shared.pauseMusic()
             showPauseOverlay()
         case .paused:
             phase = .playing
             gameplayLayer.isPaused = false
             screenOverlay.removeAllChildren()
+            GameAudio.shared.resumeMusic()
             lastUpdateTime = 0
         default:
             break
@@ -647,6 +660,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         enemyTimer = 4.0
         fallingHazardTimer = 6.0
         setWorld(nextWorld, announce: true)
+        GameAudio.shared.playMusic(nextWorld.musicTheme)
         if nextWorld == .storybookCastle {
             awardAchievement(.worldTraveler)
         }
@@ -690,6 +704,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         boss.run(.sequence([entrance, attackPattern]))
 
         showBossBar()
+        GameAudio.shared.playMusic(.boss)
         showToast("BOSS BATTLE  •  BOOSTER BLASTS READY!", color: WorldArt.glitchPink, duration: 2.3)
         GameAudio.shared.play(.worldChange)
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -787,6 +802,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         enemyTimer = 4.5
         fallingHazardTimer = 6.2
         setWorld(.cloudKingdom, announce: true)
+        GameAudio.shared.playMusic(.cloudKingdom)
     }
 
     private func showBossBar() {
@@ -1263,19 +1279,25 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
         switch phase {
         case .title:
-            if gearButton.contains(point) {
+            if handleSoundButton(at: point) {
+                return
+            } else if gearButton.contains(point) {
                 showGearScreen()
             } else {
                 showStoryPage(0)
             }
         case .story(let page):
-            if page < 2 {
+            if handleSoundButton(at: point) {
+                return
+            } else if page < 2 {
                 showStoryPage(page + 1)
             } else {
                 startRun()
             }
         case .gear:
-            if gearBackButton.contains(point) {
+            if handleSoundButton(at: point) {
+                return
+            } else if gearBackButton.contains(point) {
                 showTitleScreen()
                 return
             }
@@ -1292,17 +1314,24 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
                 return
             }
         case .playing:
-            if pauseButton.contains(point) {
+            if handleSoundButton(at: point) {
+                return
+            } else if pauseButton.contains(point) {
                 togglePause()
             } else {
                 isBoosting = true
                 UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.5)
             }
         case .paused:
-            if pauseButton.contains(point) {
+            if handleSoundButton(at: point) {
+                return
+            } else if pauseButton.contains(point) {
                 togglePause()
             }
         case .gameOver:
+            if handleSoundButton(at: point) {
+                return
+            }
             startRun()
         }
     }
@@ -1365,6 +1394,10 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             pauseButton.addChild(bar)
         }
         hudLayer.addChild(pauseButton)
+
+        configureSoundButton(soundButton)
+        soundButton.zPosition = 80
+        hudLayer.addChild(soundButton)
     }
 
     private func layoutScene() {
@@ -1375,6 +1408,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         worldLabel.position = CGPoint(x: size.width / 2, y: size.height - 35)
         powerLabel.position = CGPoint(x: size.width / 2, y: size.height - 64)
         pauseButton.position = CGPoint(x: size.width - 48, y: size.height - 43)
+        soundButton.position = CGPoint(x: size.width - 162, y: size.height - 43)
 
         if phase == .playing || phase == .paused {
             player.position.x = size.width * 0.25
@@ -1476,5 +1510,40 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
         let label = makeLabel(text, size: 17, color: .white)
         button.addChild(label)
+    }
+
+    private func addMenuSoundButton(at position: CGPoint) {
+        configureSoundButton(menuSoundButton)
+        menuSoundButton.position = position
+        menuSoundButton.zPosition = 120
+        screenOverlay.addChild(menuSoundButton)
+    }
+
+    private func configureSoundButton(_ button: SKShapeNode) {
+        configureButton(
+            button,
+            text: GameAudio.shared.isMuted ? "SOUND OFF" : "SOUND ON",
+            width: 142,
+            color: GameAudio.shared.isMuted
+                ? UIColor.gray
+                : UIColor(red: 1, green: 0.82, blue: 0.20, alpha: 1)
+        )
+    }
+
+    private func handleSoundButton(at point: CGPoint) -> Bool {
+        let tappedHUDButton = soundButton.parent != nil && !hudLayer.isHidden && soundButton.contains(point)
+        let tappedMenuButton = menuSoundButton.parent != nil && menuSoundButton.contains(point)
+        guard tappedHUDButton || tappedMenuButton else { return false }
+
+        let muted = GameAudio.shared.toggleMute()
+        configureSoundButton(soundButton)
+        if menuSoundButton.parent != nil {
+            configureSoundButton(menuSoundButton)
+        }
+        if !muted {
+            GameAudio.shared.play(.button)
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.55)
+        return true
     }
 }
