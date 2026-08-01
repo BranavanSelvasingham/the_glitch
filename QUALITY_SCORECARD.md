@@ -2,9 +2,9 @@
 
 ## Current Iteration
 
-- Build/commit: smooth-world-transition iteration (this commit)
+- Build/commit: 100-session simulator stability iteration (this commit)
 - Date: 2026-08-01
-- Weighted score: **67.4 / 100 (provisional implementation-and-visual audit)**
+- Weighted score: **67.6 / 100 (provisional implementation-and-visual audit)**
 - Hard gates: **4 provisional passes, 0 failures, 3 pending**
 
 This score intentionally penalizes missing direct player and physical-device evidence. It is not an enjoyment claim.
@@ -22,13 +22,13 @@ This score intentionally penalizes missing direct player and physical-device evi
 | Fun and replayability | 10 | 1.0 | 2.0 | Gameplay loop exists | No target-player ratings or voluntary-restart evidence |
 | Story and world identity | 5 | 4.3 | 4.3 | Each world now has bespoke illustration, music, obstacles, and falling hazards | Recall and fantasy-vs-techno descriptions are unverified with players |
 | Usability and accessibility | 5 | 3.5 | 3.5 | Persistent ≥44-point controls plus dark HUD contrast panels inspected over bright and dark worlds | Physical readability and uncoached comprehension remain unverified |
-| Technical quality | 5 | 4.4 | 4.4 | Clean simulator and signed physical-iPad builds; 13/13 save checks; signed update installed; final four-world/boss simulator probe measured 60.0 p95 FPS, 36.6 ms worst frame, 0 hitches, 1.27 s launch, and 229 MB | Device remained locked during launch; physical Instruments, thermal, and 100-session data remain pending |
+| Technical quality | 5 | 4.6 | 4.6 | Clean simulator and signed physical-iPad builds; 13/13 save checks; signed update installed; performance targets passed; 100/100 simulator launches reached gameplay and remained alive | Device remained locked during launch; physical Instruments, thermal, lifecycle, and long-session data remain pending |
 
 ## Hard-Gate Status
 
 | Gate | Status | Evidence or blocker |
 | --- | --- | --- |
-| Crash/progression/save integrity | Provisional pass | Clean builds plus direct 13/13 isolated persistence result cover score, chips, gear, achievements, one-time daily rewards, capping, and date reset; physical update test pending |
+| Crash/progression/save integrity | Provisional pass | Clean builds, 13/13 isolated persistence result, and 100/100 simulator sessions with no early exit; physical update/relaunch and long-session tests pending |
 | Collision fairness and readability | Pending | Collision system works in simulator; target-player attribution evidence missing |
 | Interface fit and readability | Pending | Current iPad simulator matrix is legible; second size and physical inspection missing |
 | Major-action feedback and production assets | Provisional pass | Major-action feedback covers boost, glide, pickup, shield hit, defeat, and boss victory; all normal-play major characters, enemies, hazards, pickups, power-ups, barriers, and worlds now use production art; physical inspection pending |
@@ -46,4 +46,5 @@ This score intentionally penalizes missing direct player and physical-device evi
 | `dddbdee` | Bespoke natural-fantasy panoramas will make the worlds beautiful and unmistakable without obscuring play | Clean simulator/device builds; direct screenshot inspection of Cloud Kingdom, Dino Jungle, Candy Canyon, and Storybook Castle | All four worlds are visually distinct, richer, and retain a clear central flight lane; old procedural scenery was reduced to subtle parallax | +5.3 | Production enemy, hazard, and pickup art; physical iPad and target-player ratings pending |
 | `977ce72` | Replacing flat gameplay shapes with cohesive production sprites will make every interaction match the illustrated worlds without reducing readability | Clean simulator/device builds; actual-scale four-world screenshot inspection; asset alpha inspection | The Glitch, chips, power-ups, falling hazards, and barriers now match the premium art direction; inspection caught and repaired edge-on chip visibility, compressed short barriers, and HUD contrast | +4.5 | Physical iPad collision/readability, menu decoration, and target-player ratings pending |
 | `357757f` | Isolated executable save checks will turn persistence from source inference into repeatable evidence without risking player data | Clean simulator and generic-iPad builds; 13/13 diagnostic capture; signed physical build and install | Score, chips, gear, achievements, reward idempotency, daily cap, and date reset pass; app installed on the paired iPad | +0.4 | Device was locked during launch; physical update/relaunch, runtime performance, and human play remain pending |
-| This commit | Precomputing transition work before gameplay will remove the hitches exposed by a four-world/boss stress probe | Three measured probes, final clean simulator and signed physical-iPad builds, signed update install, direct result-screen inspection | Reduced four hitches/243.5 ms worst frame to zero hitches/36.6 ms while keeping launch at 1.27 s and memory at 229 MB | +0.3 | Simulator result is provisional; physical Instruments, thermal behavior, 100 sessions, and unlocked-device play remain pending |
+| `14fdbf9` | Precomputing transition work before gameplay will remove the hitches exposed by a four-world/boss stress probe | Three measured probes, final clean simulator and signed physical-iPad builds, signed update install, direct result-screen inspection | Reduced four hitches/243.5 ms worst frame to zero hitches/36.6 ms while keeping launch at 1.27 s and memory at 229 MB | +0.3 | Simulator result is provisional; physical Instruments, thermal behavior, 100 sessions, and unlocked-device play remain pending |
+| This commit | Repeated fresh sessions across every world start will expose launch-time or early-game crashes hidden by single-run validation | 100 automated launches; each process checked 1.7 seconds after launch; 25 starts per world | 100/100 processes remained alive with zero failures | +0.2 | Early-game simulator soak is not a physical-device, lifecycle, thermal, or long-duration substitute |
