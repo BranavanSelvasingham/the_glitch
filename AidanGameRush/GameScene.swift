@@ -69,6 +69,9 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let gameplayQualityDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
         "--gameplay-quality-probe"
     )
+    private let audioQualityDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
+        "--audio-quality-probe"
+    )
 
     #if DEBUG
     private var performanceProbeStartTime: TimeInterval?
@@ -123,6 +126,10 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         #if DEBUG
         if persistenceDiagnosticMode {
             showPersistenceDiagnosticScreen()
+            return
+        }
+        if audioQualityDiagnosticMode {
+            showAudioQualityDiagnosticScreen()
             return
         }
         #endif
@@ -202,6 +209,77 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     // MARK: - Screens
 
     #if DEBUG
+    private func showAudioQualityDiagnosticScreen() {
+        let result = GameAudio.shared.runQualityDiagnostic()
+        phase = .title
+        screenOverlay.removeAllChildren()
+        hudLayer.isHidden = true
+        player.isHidden = true
+
+        let backdrop = SKShapeNode(rectOf: CGSize(width: size.width, height: size.height))
+        backdrop.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        backdrop.fillColor = UIColor(red: 0.05, green: 0.09, blue: 0.17, alpha: 0.96)
+        backdrop.strokeColor = .clear
+        screenOverlay.addChild(backdrop)
+
+        let title = makeLabel(
+            result.passed ? "AUDIO PROBE: PASS" : "AUDIO PROBE: NEEDS WORK",
+            size: min(46, size.height * 0.085),
+            color: result.passed ? .systemGreen : .systemYellow
+        )
+        title.position = CGPoint(x: size.width / 2, y: size.height * 0.82)
+        screenOverlay.addChild(title)
+
+        let subtitle = makeLabel(
+            "LIVE BUFFER • SCHEDULING • PEAK • MUTE • SESSION CHECKS",
+            size: min(20, size.height * 0.038),
+            color: .white
+        )
+        subtitle.position = CGPoint(x: size.width / 2, y: size.height * 0.72)
+        screenOverlay.addChild(subtitle)
+
+        let rows = [
+            "ACTION SOUND COVERAGE     \(result.effectCoverage) / \(GameAudio.Effect.allCases.count)   (TARGET ALL)",
+            "MUSIC THEME COVERAGE      \(result.themeCoverage) / \(GameAudio.MusicTheme.allCases.count)   (TARGET ALL)",
+            String(format: "MAX EFFECT SCHEDULE       %.2f ms  (TARGET ≤16.7 ms)", result.maximumEffectScheduleMS),
+            String(format: "MAX MUSIC SWITCH          %.2f ms  (TARGET ≤16.7 ms)", result.maximumMusicScheduleMS),
+            String(format: "MAX EFFECT PEAK           %.3f    (TARGET <0.920)", result.maximumEffectPeak),
+            String(format: "MAX MUSIC PEAK            %.3f    (TARGET <0.920)", result.maximumMusicPeak),
+            "MUTE + VOLUME RESTORE     \(result.muteRoundTripPassed ? "PASS" : "FAIL")",
+            "AMBIENT MIXING SESSION    \(result.ambientSessionPassed ? "PASS" : "FAIL")"
+        ]
+        for (index, row) in rows.enumerated() {
+            let label = makeLabel(row, size: min(18, size.height * 0.034), color: .white)
+            label.fontName = "Menlo-Bold"
+            label.position = CGPoint(
+                x: size.width / 2,
+                y: size.height * 0.61 - CGFloat(index) * min(39, size.height * 0.060)
+            )
+            screenOverlay.addChild(label)
+        }
+
+        let caveat = makeLabel(
+            "IMPLEMENTATION PASS • PHYSICAL SPEAKER + PLAYER LISTENING STILL REQUIRED",
+            size: min(17, size.height * 0.032),
+            color: .systemYellow
+        )
+        caveat.position = CGPoint(x: size.width / 2, y: size.height * 0.10)
+        screenOverlay.addChild(caveat)
+
+        print(String(
+            format: "AUDIO_QUALITY_PROBE %@ effects=%d themes=%d effectMS=%.2f musicMS=%.2f effectPeak=%.3f musicPeak=%.3f mute=%@ session=%@",
+            result.passed ? "PASS" : "FAIL",
+            result.effectCoverage,
+            result.themeCoverage,
+            result.maximumEffectScheduleMS,
+            result.maximumMusicScheduleMS,
+            result.maximumEffectPeak,
+            result.maximumMusicPeak,
+            result.muteRoundTripPassed ? "PASS" : "FAIL",
+            result.ambientSessionPassed ? "PASS" : "FAIL"
+        ))
+    }
+
     private func showPersistenceDiagnosticScreen() {
         let result = PersistenceDiagnostics.run()
         func addDiagnosticLabel(

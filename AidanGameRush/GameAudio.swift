@@ -2,7 +2,7 @@ import AVFoundation
 
 @MainActor
 final class GameAudio {
-    enum Effect: Hashable {
+    enum Effect: Hashable, CaseIterable {
         case begin
         case chip
         case powerUp
@@ -24,7 +24,7 @@ final class GameAudio {
         }
     }
 
-    enum MusicTheme: Hashable {
+    enum MusicTheme: Hashable, CaseIterable {
         case title
         case cloudKingdom
         case dinoJungle
@@ -67,6 +67,8 @@ final class GameAudio {
     private var musicPaused = false
     private var effectBuffers: [Effect: [AVAudioPCMBuffer]] = [:]
     private var musicBuffers: [MusicTheme: AVAudioPCMBuffer] = [:]
+    private var effectPeaks: [Effect: Float] = [:]
+    private var musicPeaks: [MusicTheme: Float] = [:]
 
     private(set) var isMuted = UserDefaults.standard.bool(forKey: muteKey)
     private(set) var lastMusicPeak: Float = 0
@@ -161,21 +163,28 @@ final class GameAudio {
     }
 
     private func preloadSynthesizedAudio() {
-        let effects: [Effect] = [
-            .begin, .chip, .powerUp, .shieldHit, .crash, .worldChange, .button
-        ]
-        for effect in effects {
-            effectBuffers[effect] = effect.notes.compactMap { note in
+        for effect in Effect.allCases {
+            let buffers = effect.notes.compactMap { note in
                 makeTone(frequency: note.frequency, duration: note.duration)
             }
+            effectBuffers[effect] = buffers
+            effectPeaks[effect] = buffers.map(peakAmplitude).max() ?? 0
         }
 
-        let themes: [MusicTheme] = [
-            .title, .cloudKingdom, .dinoJungle, .candyCanyon, .storybookCastle, .boss
-        ]
-        for theme in themes {
+        for theme in MusicTheme.allCases {
             musicBuffers[theme] = makeMusicBuffer(for: theme)
         }
+    }
+
+    private func peakAmplitude(in buffer: AVAudioPCMBuffer) -> Float {
+        guard let channels = buffer.floatChannelData else { return 0 }
+        var peak: Float = 0
+        for channelIndex in 0..<Int(buffer.format.channelCount) {
+            for frame in 0..<Int(buffer.frameLength) {
+                peak = max(peak, abs(channels[channelIndex][frame]))
+            }
+        }
+        return peak
     }
 
     private func makeTone(frequency: Double, duration: Double) -> AVAudioPCMBuffer? {
@@ -267,9 +276,97 @@ final class GameAudio {
         }
 
         lastMusicPeak = Float(peak)
+        musicPeaks[theme] = Float(peak)
         assert(peak < 0.92, "Music mix clipped at peak \(peak)")
         return buffer
     }
+
+    #if DEBUG
+    struct QualityDiagnosticResult {
+        let effectCoverage: Int
+        let themeCoverage: Int
+        let maximumEffectScheduleMS: Double
+        let maximumMusicScheduleMS: Double
+        let maximumEffectPeak: Float
+        let maximumMusicPeak: Float
+        let muteRoundTripPassed: Bool
+        let ambientSessionPassed: Bool
+
+        var passed: Bool {
+            effectCoverage == Effect.allCases.count
+                && themeCoverage == MusicTheme.allCases.count
+                && maximumEffectScheduleMS <= 16.7
+                && maximumMusicScheduleMS <= 16.7
+                && maximumEffectPeak < 0.92
+                && maximumMusicPeak < 0.92
+                && muteRoundTripPassed
+                && ambientSessionPassed
+        }
+    }
+
+    func runQualityDiagnostic() -> QualityDiagnosticResult {
+        let originalMute = isMuted
+        if isMuted {
+            _ = toggleMute()
+        }
+
+        var effectScheduleTimes: [Double] = []
+        for effect in Effect.allCases {
+            let start = ProcessInfo.processInfo.systemUptime
+            play(effect)
+            effectScheduleTimes.append((ProcessInfo.processInfo.systemUptime - start) * 1_000)
+        }
+
+        var musicScheduleTimes: [Double] = []
+        for theme in MusicTheme.allCases {
+            let start = ProcessInfo.processInfo.systemUptime
+            playMusic(theme)
+            musicScheduleTimes.append((ProcessInfo.processInfo.systemUptime - start) * 1_000)
+        }
+        stopMusic()
+
+        let muteRoundTripPassed = validateMuteRoundTrip()
+        if isMuted != originalMute {
+            _ = toggleMute()
+        }
+
+        let session = AVAudioSession.sharedInstance()
+        let ambientSessionPassed = session.category == .ambient
+            && session.categoryOptions.contains(.mixWithOthers)
+
+        return QualityDiagnosticResult(
+            effectCoverage: Effect.allCases.filter {
+                effectBuffers[$0]?.count == $0.notes.count
+            }.count,
+            themeCoverage: MusicTheme.allCases.filter { musicBuffers[$0] != nil }.count,
+            maximumEffectScheduleMS: effectScheduleTimes.max() ?? .infinity,
+            maximumMusicScheduleMS: musicScheduleTimes.max() ?? .infinity,
+            maximumEffectPeak: effectPeaks.values.max() ?? .infinity,
+            maximumMusicPeak: musicPeaks.values.max() ?? .infinity,
+            muteRoundTripPassed: muteRoundTripPassed && isMuted == originalMute,
+            ambientSessionPassed: ambientSessionPassed
+        )
+    }
+
+    private func validateMuteRoundTrip() -> Bool {
+        let initialMute = isMuted
+        let firstMute = toggleMute()
+        let firstVolumesMatch = volumesMatchMuteState()
+        let secondMute = toggleMute()
+        let secondVolumesMatch = volumesMatchMuteState()
+        return firstMute != initialMute
+            && secondMute == initialMute
+            && firstVolumesMatch
+            && secondVolumesMatch
+    }
+
+    private func volumesMatchMuteState() -> Bool {
+        let expectedMusic: Float = isMuted ? 0 : 0.16
+        let expectedEffect: Float = isMuted ? 0 : 0.72
+        return abs(musicPlayer.volume - expectedMusic) < 0.001
+            && effectPlayers.allSatisfy { abs($0.volume - expectedEffect) < 0.001 }
+    }
+    #endif
 
     private func frequency(
         forDegree degree: Int,
