@@ -12,6 +12,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let chipLabel = SKLabelNode(fontNamed: "AvenirNext-Heavy")
     private let worldLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
     private let powerLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
+    private let scoreHUDPanel = SKShapeNode(rectOf: CGSize(width: 245, height: 92), cornerRadius: 24)
+    private let worldHUDPanel = SKShapeNode(rectOf: CGSize(width: 360, height: 88), cornerRadius: 24)
     private let pauseButton = SKShapeNode()
     private let soundButton = SKShapeNode()
     private let menuSoundButton = SKShapeNode()
@@ -962,8 +964,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         let floorY = lowerFlightLimit - 38
         let ceilingY = upperFlightLimit + 48
         let gapHeight = max(245, size.height * 0.31 - CGFloat(runTime) * 1.25)
-        let minCenter = floorY + gapHeight / 2 + 40
-        let maxCenter = ceilingY - gapHeight / 2 - 40
+        let minCenter = floorY + gapHeight / 2 + 70
+        let maxCenter = ceilingY - gapHeight / 2 - 70
         guard maxCenter > minCenter else { return }
 
         let gapCenter = CGFloat.random(in: minCenter...maxCenter)
@@ -1511,6 +1513,14 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     // MARK: - HUD and layout
 
     private func buildHUD() {
+        for panel in [scoreHUDPanel, worldHUDPanel] {
+            panel.fillColor = WorldArt.ink.withAlphaComponent(0.58)
+            panel.strokeColor = UIColor.white.withAlphaComponent(0.34)
+            panel.lineWidth = 2
+            panel.zPosition = -1
+            hudLayer.addChild(panel)
+        }
+
         scoreLabel.fontSize = 22
         scoreLabel.fontColor = .white
         scoreLabel.horizontalAlignmentMode = .left
@@ -1565,8 +1575,10 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
         scoreLabel.position = CGPoint(x: 28, y: size.height - 36)
         chipLabel.position = CGPoint(x: 29, y: size.height - 67)
+        scoreHUDPanel.position = CGPoint(x: 137, y: size.height - 52)
         worldLabel.position = CGPoint(x: size.width / 2, y: size.height - 35)
         powerLabel.position = CGPoint(x: size.width / 2, y: size.height - 64)
+        worldHUDPanel.position = CGPoint(x: size.width / 2, y: size.height - 50)
         pauseButton.position = CGPoint(x: size.width - 48, y: size.height - 43)
         soundButton.position = CGPoint(x: size.width - 162, y: size.height - 43)
 

@@ -134,34 +134,25 @@ enum WorldArt {
         let chip = SKNode()
         chip.name = "chip"
 
-        let path = CGMutablePath()
-        for index in 0..<6 {
-            let angle = CGFloat(index) * .pi / 3
-            let point = CGPoint(x: cos(angle) * 22, y: sin(angle) * 22)
-            index == 0 ? path.move(to: point) : path.addLine(to: point)
-        }
-        path.closeSubpath()
-
-        let coin = SKShapeNode(path: path)
-        coin.fillColor = UIColor(red: 1, green: 0.82, blue: 0.12, alpha: 1)
-        coin.strokeColor = .white
-        coin.lineWidth = 3
-        coin.glowWidth = 3
-        chip.addChild(coin)
-
-        let mark = SKLabelNode(fontNamed: "AvenirNext-Heavy")
-        mark.text = "★"
-        mark.fontSize = 18
-        mark.fontColor = UIColor(red: 0.90, green: 0.34, blue: 0.08, alpha: 1)
-        mark.verticalAlignmentMode = .center
-        coin.addChild(mark)
+        let art = SKSpriteNode(imageNamed: "GameChip")
+        art.size = CGSize(width: 58, height: 58)
+        chip.addChild(art)
 
         chip.physicsBody = SKPhysicsBody(circleOfRadius: 22)
         chip.physicsBody?.isDynamic = false
         chip.physicsBody?.categoryBitMask = PhysicsCategory.chip
         chip.physicsBody?.contactTestBitMask = PhysicsCategory.player
         chip.physicsBody?.collisionBitMask = 0
-        chip.run(.repeatForever(.rotate(byAngle: .pi, duration: 0.8)))
+        art.run(.repeatForever(.sequence([
+            .group([
+                .scaleX(to: 0.62, duration: 0.34),
+                .scaleY(to: 1.04, duration: 0.34)
+            ]),
+            .group([
+                .scaleX(to: 1, duration: 0.34),
+                .scaleY(to: 1, duration: 0.34)
+            ])
+        ])))
         return chip
     }
 
@@ -170,21 +161,9 @@ enum WorldArt {
         root.name = "powerUp"
         root.userData = ["kind": kind.rawValue]
 
-        let bubble = SKShapeNode(circleOfRadius: 32)
-        bubble.fillColor = kind == .shield
-            ? glitchBlue.withAlphaComponent(0.45)
-            : UIColor(red: 1, green: 0.78, blue: 0.12, alpha: 0.45)
-        bubble.strokeColor = kind == .shield ? glitchBlue : UIColor(red: 1, green: 0.86, blue: 0.18, alpha: 1)
-        bubble.lineWidth = 4
-        bubble.glowWidth = 7
-        root.addChild(bubble)
-
-        let icon = SKLabelNode(fontNamed: "AvenirNext-Heavy")
-        icon.text = kind == .shield ? "S" : "U"
-        icon.fontSize = 26
-        icon.fontColor = .white
-        icon.verticalAlignmentMode = .center
-        bubble.addChild(icon)
+        let art = SKSpriteNode(imageNamed: kind == .shield ? "ShieldPickup" : "MagnetPickup")
+        art.size = CGSize(width: 86, height: 86)
+        root.addChild(art)
 
         root.physicsBody = SKPhysicsBody(circleOfRadius: 32)
         root.physicsBody?.isDynamic = false
@@ -202,76 +181,30 @@ enum WorldArt {
         let root = SKNode()
         root.name = "hazard"
 
-        let path = CGMutablePath()
-        let points = [
-            CGPoint(x: -39, y: 8), CGPoint(x: -29, y: 35), CGPoint(x: -5, y: 29),
-            CGPoint(x: 13, y: 43), CGPoint(x: 37, y: 21), CGPoint(x: 31, y: -4),
-            CGPoint(x: 41, y: -29), CGPoint(x: 10, y: -34), CGPoint(x: -12, y: -45),
-            CGPoint(x: -25, y: -24), CGPoint(x: -46, y: -14)
-        ]
-        path.move(to: points[0])
-        for point in points.dropFirst() { path.addLine(to: point) }
-        path.closeSubpath()
-
-        let body = SKShapeNode(path: path)
-        body.fillColor = ink
-        body.strokeColor = glitchPink
-        body.lineWidth = 4
-        body.glowWidth = 5
+        let body = SKSpriteNode(imageNamed: "GlitchEnemy")
+        body.name = "glitchArt"
+        body.size = CGSize(width: 112, height: 112)
         root.addChild(body)
-
-        for x in [-14, 14] as [CGFloat] {
-            let eye = SKShapeNode(rectOf: CGSize(width: 13, height: 8), cornerRadius: 2)
-            eye.position = CGPoint(x: x, y: 7)
-            eye.fillColor = x < 0 ? glitchBlue : glitchPink
-            eye.strokeColor = .white
-            eye.lineWidth = 1
-            body.addChild(eye)
-        }
-
-        let mouth = SKShapeNode(rectOf: CGSize(width: 24, height: 4))
-        mouth.position.y = -13
-        mouth.fillColor = glitchPink
-        mouth.strokeColor = .clear
-        body.addChild(mouth)
-
-        for index in 0..<3 {
-            let shard = SKShapeNode(rectOf: CGSize(width: CGFloat(13 + index * 5), height: 3))
-            shard.position = CGPoint(x: CGFloat(49 + index * 11), y: CGFloat(19 - index * 18))
-            shard.fillColor = index.isMultiple(of: 2) ? glitchBlue : glitchPink
-            shard.strokeColor = .clear
-            root.addChild(shard)
-            shard.run(.repeatForever(.sequence([
-                .wait(forDuration: 0.08 * Double(index)),
-                .fadeAlpha(to: 0.25, duration: 0.07),
-                .moveBy(x: CGFloat(5 + index * 2), y: index.isMultiple(of: 2) ? 4 : -4, duration: 0.09),
-                .group([
-                    .fadeAlpha(to: 1, duration: 0.08),
-                    .moveBy(x: CGFloat(-(5 + index * 2)), y: index.isMultiple(of: 2) ? -4 : 4, duration: 0.08)
-                ]),
-                .wait(forDuration: 0.20)
-            ])))
-        }
 
         body.run(.repeatForever(.sequence([
             .group([
-                .rotate(toAngle: 0.055, duration: 0.16, shortestUnitArc: true),
-                .scaleX(to: 1.05, duration: 0.16),
-                .scaleY(to: 0.96, duration: 0.16)
+                .rotate(toAngle: 0.045, duration: 0.22, shortestUnitArc: true),
+                .scaleX(to: 1.035, duration: 0.22),
+                .scaleY(to: 0.97, duration: 0.22)
             ]),
             .group([
-                .rotate(toAngle: -0.045, duration: 0.14, shortestUnitArc: true),
-                .scaleX(to: 0.96, duration: 0.14),
-                .scaleY(to: 1.05, duration: 0.14)
+                .rotate(toAngle: -0.035, duration: 0.18, shortestUnitArc: true),
+                .scaleX(to: 0.98, duration: 0.18),
+                .scaleY(to: 1.035, duration: 0.18)
             ]),
             .group([
-                .rotate(toAngle: 0, duration: 0.10, shortestUnitArc: true),
-                .scale(to: 1, duration: 0.10)
+                .rotate(toAngle: 0, duration: 0.13, shortestUnitArc: true),
+                .scale(to: 1, duration: 0.13)
             ]),
-            .wait(forDuration: 0.16)
+            .wait(forDuration: 0.10)
         ])))
 
-        root.physicsBody = SKPhysicsBody(circleOfRadius: 39)
+        root.physicsBody = SKPhysicsBody(circleOfRadius: 42)
         root.physicsBody?.isDynamic = false
         root.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         root.physicsBody?.contactTestBitMask = PhysicsCategory.player
@@ -357,39 +290,16 @@ enum WorldArt {
         let root = SKNode()
         root.name = "hazard"
 
-        let item: SKShapeNode
-        switch theme {
-        case .cloudKingdom:
-            item = SKShapeNode(path: starPath(outerRadius: 36, innerRadius: 21, points: 8))
-            item.fillColor = UIColor(red: 0.37, green: 0.38, blue: 0.43, alpha: 1)
-        case .dinoJungle:
-            item = SKShapeNode(circleOfRadius: 34)
-            item.fillColor = UIColor(red: 0.37, green: 0.23, blue: 0.12, alpha: 1)
-        case .candyCanyon:
-            item = SKShapeNode(circleOfRadius: 34)
-            item.fillColor = UIColor(red: 0.94, green: 0.22, blue: 0.42, alpha: 1)
-        case .storybookCastle:
-            item = SKShapeNode(rectOf: CGSize(width: 55, height: 62), cornerRadius: 5)
-            item.fillColor = UIColor(red: 0.35, green: 0.19, blue: 0.52, alpha: 1)
-        }
-        item.strokeColor = glitchPink
-        item.lineWidth = 4
-        item.glowWidth = 3
-        root.addChild(item)
-
-        let corruption = SKShapeNode(rectOf: CGSize(width: 25, height: 8), cornerRadius: 2)
-        corruption.position = CGPoint(x: 8, y: 4)
-        corruption.fillColor = ink
-        corruption.strokeColor = glitchBlue
-        corruption.lineWidth = 2
-        item.addChild(corruption)
+        let art = SKSpriteNode(imageNamed: theme.hazardAssetName)
+        art.size = CGSize(width: 82, height: 82)
+        root.addChild(art)
 
         root.physicsBody = SKPhysicsBody(circleOfRadius: 34)
         root.physicsBody?.isDynamic = false
         root.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         root.physicsBody?.contactTestBitMask = PhysicsCategory.player
         root.physicsBody?.collisionBitMask = 0
-        root.run(.repeatForever(.rotate(byAngle: .pi * 2, duration: 1.4)))
+        art.run(.repeatForever(.rotate(byAngle: .pi * 2, duration: 1.6)))
         return root
     }
 
@@ -397,56 +307,9 @@ enum WorldArt {
         let root = SKNode()
         root.name = "hazard"
 
-        let body = shape(
-            rect: size,
-            radius: theme == .storybookCastle ? 4 : 18,
-            fill: barrierColor(for: theme),
-            stroke: theme.accentColor
-        )
-        body.lineWidth = 4
-        root.addChild(body)
-
-        switch theme {
-        case .cloudKingdom:
-            let count = max(1, Int(size.height / 62))
-            for index in 0..<count {
-                let puff = SKShapeNode(circleOfRadius: 29)
-                puff.position = CGPoint(x: index.isMultiple(of: 2) ? -18 : 16, y: -size.height / 2 + 32 + CGFloat(index) * 61)
-                puff.fillColor = UIColor.white.withAlphaComponent(0.92)
-                puff.strokeColor = UIColor(red: 0.60, green: 0.84, blue: 1, alpha: 1)
-                puff.lineWidth = 2
-                body.addChild(puff)
-            }
-        case .dinoJungle:
-            let count = max(1, Int(size.height / 54))
-            for index in 0..<count {
-                let leaf = SKShapeNode(ellipseOf: CGSize(width: 43, height: 22))
-                leaf.position = CGPoint(x: index.isMultiple(of: 2) ? -28 : 28, y: -size.height / 2 + 25 + CGFloat(index) * 52)
-                leaf.fillColor = index.isMultiple(of: 2) ? theme.accentColor : UIColor(red: 0.08, green: 0.52, blue: 0.24, alpha: 1)
-                leaf.strokeColor = .clear
-                leaf.zRotation = index.isMultiple(of: 2) ? 0.45 : -0.45
-                body.addChild(leaf)
-            }
-        case .candyCanyon:
-            let count = max(1, Int(size.height / 46))
-            for index in 0..<count {
-                let stripe = SKShapeNode(rectOf: CGSize(width: size.width - 8, height: 17), cornerRadius: 5)
-                stripe.position.y = -size.height / 2 + 24 + CGFloat(index) * 46
-                stripe.fillColor = index.isMultiple(of: 2) ? .white : theme.accentColor
-                stripe.strokeColor = .clear
-                stripe.zRotation = -0.17
-                body.addChild(stripe)
-            }
-        case .storybookCastle:
-            let rows = max(1, Int(size.height / 32))
-            for row in 0..<rows {
-                let mortar = SKShapeNode(rectOf: CGSize(width: size.width - 5, height: 2))
-                mortar.position.y = -size.height / 2 + CGFloat(row) * 32
-                mortar.fillColor = UIColor.white.withAlphaComponent(0.26)
-                mortar.strokeColor = .clear
-                body.addChild(mortar)
-            }
-        }
+        let art = SKSpriteNode(imageNamed: theme.barrierAssetName)
+        art.size = CGSize(width: size.width + 22, height: max(48, size.height + 12))
+        root.addChild(art)
 
         root.physicsBody = SKPhysicsBody(rectangleOf: size)
         root.physicsBody?.isDynamic = false
@@ -628,15 +491,6 @@ enum WorldArt {
             cloud.addChild(puff)
         }
         return cloud
-    }
-
-    private static func barrierColor(for theme: WorldTheme) -> UIColor {
-        switch theme {
-        case .cloudKingdom: UIColor(red: 0.76, green: 0.90, blue: 1, alpha: 1)
-        case .dinoJungle: UIColor(red: 0.16, green: 0.40, blue: 0.16, alpha: 1)
-        case .candyCanyon: UIColor(red: 0.92, green: 0.28, blue: 0.52, alpha: 1)
-        case .storybookCastle: UIColor(red: 0.36, green: 0.32, blue: 0.56, alpha: 1)
-        }
     }
 
     private static func shape(

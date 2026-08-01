@@ -25,6 +25,24 @@ enum WorldTheme: Int, CaseIterable {
         }
     }
 
+    var hazardAssetName: String {
+        switch self {
+        case .cloudKingdom: "CloudHazard"
+        case .dinoJungle: "DinoHazard"
+        case .candyCanyon: "CandyHazard"
+        case .storybookCastle: "CastleHazard"
+        }
+    }
+
+    var barrierAssetName: String {
+        switch self {
+        case .cloudKingdom: "CloudBarrier"
+        case .dinoJungle: "DinoBarrier"
+        case .candyCanyon: "CandyBarrier"
+        case .storybookCastle: "CastleBarrier"
+        }
+    }
+
     var name: String {
         switch self {
         case .cloudKingdom: "CLOUD KINGDOM"
