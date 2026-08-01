@@ -46,12 +46,15 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private var bossShotTimer: TimeInterval = 0
     private var heroShotTimer: TimeInterval = 0
     private var bossNode: SKNode?
+    private var boostTrailTimer: TimeInterval = 0
+    private var gameOverReady = false
 
     private var isBoosting = false
     private var hasBuiltScene = false
     private let demoMode = ProcessInfo.processInfo.arguments.contains("--demo-mode")
     private let gearPreviewMode = ProcessInfo.processInfo.arguments.contains("--gear-preview")
     private let bossPreviewMode = ProcessInfo.processInfo.arguments.contains("--boss-preview")
+    private let crashPreviewMode = ProcessInfo.processInfo.arguments.contains("--crash-preview")
 
     private let baseScrollSpeed: CGFloat = 235
     private let riseAcceleration: CGFloat = 1_260
@@ -118,7 +121,9 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         case .paused:
             showPauseOverlay()
         case .gameOver:
-            showGameOverScreen()
+            if gameOverReady {
+                showGameOverScreen()
+            }
         case .playing:
             break
         }
@@ -465,11 +470,11 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         prompt.position.y = -37
         panel.addChild(prompt)
 
-        addMenuSoundButton(at: CGPoint(x: size.width / 2, y: size.height / 2 - 82))
     }
 
     private func showGameOverScreen() {
         screenOverlay.removeAllChildren()
+        hudLayer.isHidden = true
 
         let shade = SKShapeNode(rect: CGRect(origin: .zero, size: size))
         shade.fillColor = UIColor.black.withAlphaComponent(0.67)
@@ -481,6 +486,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         panel.fillColor = UIColor(red: 0.98, green: 0.96, blue: 0.88, alpha: 0.99)
         panel.strokeColor = WorldArt.glitchPink
         panel.lineWidth = 6
+        panel.alpha = 0
+        panel.setScale(0.78)
         screenOverlay.addChild(panel)
 
         let villain = WorldArt.makeGlitchEnemy()
@@ -521,7 +528,11 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             .scale(to: 0.98, duration: 0.5)
         ])))
         panel.addChild(prompt)
-        addMenuSoundButton(at: CGPoint(x: 96, y: 52))
+
+        panel.run(.group([
+            .fadeIn(withDuration: 0.22),
+            .scale(to: 1, duration: 0.30)
+        ]))
     }
 
     // MARK: - Game lifecycle
@@ -538,7 +549,9 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         gameplayLayer.addChild(player)
         player.position = CGPoint(x: size.width * 0.25, y: size.height * 0.56)
         player.zRotation = 0
+        player.setScale(1)
         player.alpha = 1
+        player.physicsBody?.categoryBitMask = PhysicsCategory.player
         player.childNode(withName: "shieldAura")?.isHidden = true
         player.childNode(withName: "magnetAura")?.isHidden = true
         player.childNode(withName: "flame")?.isHidden = true
@@ -560,6 +573,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         bossFightActive = false
         bossHealth = 0
         bossNode = nil
+        boostTrailTimer = 0
+        gameOverReady = false
         hudLayer.childNode(withName: "bossBar")?.removeFromParent()
         isBoosting = false
         lastUpdateTime = 0
@@ -572,10 +587,22 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         GameAudio.shared.play(.begin)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
+        player.alpha = 0
+        player.setScale(0.72)
+        player.run(.group([
+            .fadeIn(withDuration: 0.28),
+            .scale(to: 1, duration: 0.34)
+        ]))
+
         if bossPreviewMode {
             run(.sequence([
                 .wait(forDuration: 1.0),
                 .run { [weak self] in self?.beginBossFight() }
+            ]))
+        } else if crashPreviewMode {
+            run(.sequence([
+                .wait(forDuration: 1.8),
+                .run { [weak self] in self?.endRun() }
             ]))
         }
     }
@@ -583,9 +610,12 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private func endRun() {
         guard phase == .playing else { return }
         phase = .gameOver
+        gameOverReady = false
         isBoosting = false
         player.childNode(withName: "flame")?.isHidden = true
-        gameplayLayer.isPaused = true
+        player.physicsBody?.categoryBitMask = 0
+        player.removeAllActions()
+        gameplayLayer.isPaused = false
         hudLayer.childNode(withName: "bossBar")?.removeFromParent()
 
         let finalScore = Int(scoreValue)
@@ -597,7 +627,22 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         GameAudio.shared.play(.crash)
         GameAudio.shared.stopMusic()
         UINotificationFeedbackGenerator().notificationOccurred(.error)
-        showGameOverScreen()
+
+        player.run(.sequence([
+            .group([
+                .rotate(byAngle: -.pi * 0.72, duration: 0.58),
+                .moveBy(x: -55, y: -92, duration: 0.58),
+                .scale(to: 0.72, duration: 0.58),
+                .fadeAlpha(to: 0.30, duration: 0.58)
+            ]),
+            .run { [weak self] in
+                guard let self else { return }
+                self.gameplayLayer.isPaused = true
+                self.gameOverReady = true
+                self.hudLayer.isHidden = true
+                self.showGameOverScreen()
+            }
+        ]))
     }
 
     private func togglePause() {
@@ -780,13 +825,25 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         bossFightActive = false
         scoreValue += 1_000
 
+        gameplayLayer.children
+            .filter { $0.name == "hazard" || $0.name == "heroShot" }
+            .forEach { $0.removeFromParent() }
+
         if let boss = bossNode {
             makeBurst(
                 at: boss.position,
                 colors: [WorldArt.glitchPink, WorldArt.glitchBlue, .white],
                 count: 38
             )
-            boss.removeFromParent()
+            boss.physicsBody = nil
+            boss.run(.sequence([
+                .group([
+                    .rotate(byAngle: .pi * 1.6, duration: 0.70),
+                    .scale(to: 1.45, duration: 0.32),
+                    .fadeOut(withDuration: 0.70)
+                ]),
+                .removeFromParent()
+            ]))
         }
         bossNode = nil
         hudLayer.childNode(withName: "bossBar")?.removeFromParent()
@@ -795,6 +852,20 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         showToast("THE GLITCH RETREATS!  +1000", color: UIColor(red: 1, green: 0.84, blue: 0.18, alpha: 1), duration: 2.6)
         GameAudio.shared.play(.powerUp)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+        if let character = player.childNode(withName: "characterArt") {
+            character.removeAction(forKey: "reaction")
+            character.run(.sequence([
+                .group([
+                    .rotate(byAngle: .pi * 2, duration: 0.62),
+                    .scale(to: 1.16, duration: 0.31)
+                ]),
+                .group([
+                    .rotate(toAngle: 0, duration: 0.16, shortestUnitArc: true),
+                    .scale(to: 1, duration: 0.16)
+                ])
+            ]), withKey: "reaction")
+        }
 
         runTime = TimeInterval(worldStage) * activeWorldDuration + 0.2
         invulnerabilityTime = 2.0
@@ -1042,12 +1113,32 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         }
 
         player.zRotation = max(-0.32, min(0.34, verticalVelocity / 1_360))
+        if let character = player.childNode(withName: "characterArt") {
+            let targetRotation: CGFloat = isBoosting ? 0.045 : -0.035
+            let targetXScale: CGFloat = isBoosting ? 1.035 : 0.985
+            let targetYScale: CGFloat = isBoosting ? 0.97 : 1.025
+            let blend = min(1, deltaTime * 9)
+            character.zRotation += (targetRotation - character.zRotation) * blend
+            character.xScale += (targetXScale - character.xScale) * blend
+            character.yScale += (targetYScale - character.yScale) * blend
+            character.position.y = 2 + CGFloat(sin(currentTime * 5.4)) * 1.8
+        }
+        if let booster = player.childNode(withName: "boosterPack") {
+            let pulse = isBoosting ? 1 + CGFloat(sin(currentTime * 20)) * 0.06 : 1
+            booster.setScale(pulse)
+        }
         if let flame = player.childNode(withName: "flame") {
             flame.isHidden = !isBoosting
             if isBoosting {
                 flame.yScale = 0.84 + CGFloat(sin(currentTime * 23)) * 0.15
                 flame.xScale = 0.94 + CGFloat(cos(currentTime * 17)) * 0.08
             }
+        }
+
+        boostTrailTimer -= TimeInterval(deltaTime)
+        if isBoosting, boostTrailTimer <= 0 {
+            spawnBoostTrailSpark()
+            boostTrailTimer = 0.055
         }
 
         if invulnerabilityTime > 0 {
@@ -1180,6 +1271,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         )
         GameAudio.shared.play(.chip)
         UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.45)
+        animatePlayerPickup(color: UIColor(red: 1, green: 0.86, blue: 0.14, alpha: 1))
     }
 
     private func collectPowerUp(_ node: SKNode) {
@@ -1209,6 +1301,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         makeBurst(at: position, colors: [WorldArt.glitchBlue, .white], count: 13)
         GameAudio.shared.play(.powerUp)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+        animatePlayerPickup(color: kind == .shield ? WorldArt.glitchBlue : UIColor(red: 1, green: 0.84, blue: 0.16, alpha: 1))
     }
 
     private func hitHazard(_ hazard: SKNode, at point: CGPoint) {
@@ -1232,6 +1325,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             showToast("SHIELD SAVE!", color: WorldArt.glitchBlue, duration: 1.2)
             GameAudio.shared.play(.shieldHit)
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            animatePlayerHit()
         } else {
             makeBurst(at: player.position, colors: [WorldArt.glitchPink, .white], count: 22)
             endRun()
@@ -1269,6 +1363,71 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
                 .removeFromParent()
             ]))
         }
+    }
+
+    private func spawnBoostTrailSpark() {
+        let spark = SKShapeNode(circleOfRadius: CGFloat.random(in: 3.5...7.0))
+        spark.position = CGPoint(
+            x: player.position.x - 72,
+            y: player.position.y + CGFloat.random(in: -11...11)
+        )
+        spark.fillColor = Bool.random()
+            ? selectedBooster.trailColor
+            : UIColor(red: 1, green: 0.86, blue: 0.20, alpha: 1)
+        spark.strokeColor = .white
+        spark.lineWidth = 1.5
+        spark.glowWidth = 3
+        spark.zPosition = -2
+        gameplayLayer.addChild(spark)
+        spark.run(.sequence([
+            .group([
+                .moveBy(x: CGFloat.random(in: -62 ... -38), y: CGFloat.random(in: -12...12), duration: 0.34),
+                .fadeOut(withDuration: 0.34),
+                .scale(to: 0.15, duration: 0.34)
+            ]),
+            .removeFromParent()
+        ]))
+    }
+
+    private func animatePlayerPickup(color: UIColor) {
+        let ring = SKShapeNode(ellipseOf: CGSize(width: 188, height: 116))
+        ring.strokeColor = color
+        ring.fillColor = .clear
+        ring.lineWidth = 4
+        ring.glowWidth = 6
+        ring.zPosition = 6
+        player.addChild(ring)
+        ring.run(.sequence([
+            .group([
+                .scale(to: 1.34, duration: 0.24),
+                .fadeOut(withDuration: 0.24)
+            ]),
+            .removeFromParent()
+        ]))
+
+        guard let character = player.childNode(withName: "characterArt") else { return }
+        character.removeAction(forKey: "reaction")
+        character.run(.sequence([
+            .group([
+                .scaleX(to: 1.09, duration: 0.09),
+                .scaleY(to: 0.92, duration: 0.09)
+            ]),
+            .group([
+                .scaleX(to: 1, duration: 0.13),
+                .scaleY(to: 1, duration: 0.13)
+            ])
+        ]), withKey: "reaction")
+    }
+
+    private func animatePlayerHit() {
+        guard let character = player.childNode(withName: "characterArt") else { return }
+        character.removeAction(forKey: "reaction")
+        character.run(.sequence([
+            .moveBy(x: -14, y: 4, duration: 0.05),
+            .moveBy(x: 24, y: -8, duration: 0.07),
+            .moveBy(x: -18, y: 6, duration: 0.06),
+            .moveBy(x: 8, y: -2, duration: 0.05)
+        ]), withKey: "reaction")
     }
 
     // MARK: - Input
@@ -1332,6 +1491,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             if handleSoundButton(at: point) {
                 return
             }
+            guard gameOverReady else { return }
             startRun()
         }
     }

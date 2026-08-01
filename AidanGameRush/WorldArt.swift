@@ -48,6 +48,15 @@ enum WorldArt {
         flame.lineWidth = 3
         flame.glowWidth = 5
         flame.zPosition = -3
+
+        let flameCore = SKShapeNode(path: flamePath)
+        flameCore.setScale(0.58)
+        flameCore.position = CGPoint(x: -22, y: 5)
+        flameCore.fillColor = .white
+        flameCore.strokeColor = glitchBlue
+        flameCore.lineWidth = 2
+        flameCore.glowWidth = 3
+        flame.addChild(flameCore)
         player.addChild(flame)
 
         let booster = shape(
@@ -220,7 +229,35 @@ enum WorldArt {
             shard.fillColor = index.isMultiple(of: 2) ? glitchBlue : glitchPink
             shard.strokeColor = .clear
             root.addChild(shard)
+            shard.run(.repeatForever(.sequence([
+                .wait(forDuration: 0.08 * Double(index)),
+                .fadeAlpha(to: 0.25, duration: 0.07),
+                .moveBy(x: CGFloat(5 + index * 2), y: index.isMultiple(of: 2) ? 4 : -4, duration: 0.09),
+                .group([
+                    .fadeAlpha(to: 1, duration: 0.08),
+                    .moveBy(x: CGFloat(-(5 + index * 2)), y: index.isMultiple(of: 2) ? -4 : 4, duration: 0.08)
+                ]),
+                .wait(forDuration: 0.20)
+            ])))
         }
+
+        body.run(.repeatForever(.sequence([
+            .group([
+                .rotate(toAngle: 0.055, duration: 0.16, shortestUnitArc: true),
+                .scaleX(to: 1.05, duration: 0.16),
+                .scaleY(to: 0.96, duration: 0.16)
+            ]),
+            .group([
+                .rotate(toAngle: -0.045, duration: 0.14, shortestUnitArc: true),
+                .scaleX(to: 0.96, duration: 0.14),
+                .scaleY(to: 1.05, duration: 0.14)
+            ]),
+            .group([
+                .rotate(toAngle: 0, duration: 0.10, shortestUnitArc: true),
+                .scale(to: 1, duration: 0.10)
+            ]),
+            .wait(forDuration: 0.16)
+        ])))
 
         root.physicsBody = SKPhysicsBody(circleOfRadius: 39)
         root.physicsBody?.isDynamic = false

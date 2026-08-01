@@ -10,6 +10,7 @@ A native iPad arcade-flight game built with Swift and SpriteKit.
 - Fly through Cloud Kingdom, Dino Jungle, Candy Canyon, and Storybook Castle.
 - Dodge themed gates, falling hazards, and invading Glitch creatures.
 - Gather Spark Chips and collect shield-bubble and chip-magnet power-ups.
+- See animated boost/glide poses, booster trails, pickup reactions, lively enemies, and dedicated defeat and boss-victory sequences.
 - Defeat The Glitch in a booster-blast boss battle after completing all four worlds.
 - Permanently unlock and equip four booster styles with saved Spark Chips.
 - Complete a daily chip quest and earn five persistent adventure badges.

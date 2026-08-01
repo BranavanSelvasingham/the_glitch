@@ -2,9 +2,9 @@
 
 ## Current Iteration
 
-- Build/commit: audio identity iteration (this commit)
+- Build/commit: animation and game-feel iteration (this commit)
 - Date: 2026-08-01
-- Weighted score: **54.3 / 100 (provisional implementation-and-visual audit)**
+- Weighted score: **56.9 / 100 (provisional implementation-and-visual audit)**
 - Hard gates: **3 provisional passes, 1 failure, 3 pending**
 
 This score intentionally penalizes missing direct player and physical-device evidence. It is not an enjoyment claim.
@@ -13,9 +13,9 @@ This score intentionally penalizes missing direct player and physical-device evi
 
 | Category | Weight | Rating (0–5) | Weighted points | Evidence | Highest-priority gap |
 | --- | ---: | ---: | ---: | --- | --- |
-| Visual composition | 15 | 3.2 | 9.6 | `QualityEvidence/Baseline/` screenshot matrix inspected | Polished Aidan/key art contrasts with flat procedural worlds and hazards |
+| Visual composition | 15 | 3.4 | 10.2 | Baseline matrix plus `QualityEvidence/Iteration-2-animation/` frame/video inspection | World and hazard rendering remain much flatter than Aidan/key art |
 | Asset richness and consistency | 15 | 2.6 | 7.8 | Source and screenshot audit | Enemies, obstacles, pickups, and most scenery lack production illustrations |
-| Animation and game feel | 10 | 2.4 | 4.8 | Simulator playthrough and source audit | Static hero sprite; limited enemy, victory, defeat, and world motion |
+| Animation and game feel | 10 | 3.4 | 6.8 | Flight and boss videos plus defeat, pickup, enemy, and trail frame sequence inspected | Human animation rating and physical response timing remain unverified |
 | Sound and music | 10 | 2.8 | 5.6 | Six distinct music profiles survived runtime assertions; major-action sounds and persistent mute control implemented | Physical speaker/headphone listening and player rating remain unverified |
 | Controls | 15 | 3.0 | 9.0 | One-touch implementation and simulator demo | Physical response time and uncoached comprehension are unverified |
 | Fairness and pacing | 10 | 2.8 | 5.6 | Spawn/timing source audit and simulator boss completion | No observed death-attribution or first-run survival data |
@@ -31,7 +31,7 @@ This score intentionally penalizes missing direct player and physical-device evi
 | Crash/progression/save integrity | Provisional pass | Clean simulator/device builds; boss health, defeat, world return, and persistence code verified; physical update test pending |
 | Collision fairness and readability | Pending | Collision system works in simulator; target-player attribution evidence missing |
 | Interface fit and readability | Pending | Current iPad simulator matrix is legible; second size and physical inspection missing |
-| Major-action feedback and production assets | Fail | Feedback exists, but most world/enemy/hazard art and several animation states do not meet the stated production bar |
+| Major-action feedback and production assets | Fail | Major-action feedback now covers boost, glide, pickup, shield hit, defeat, and boss victory; most world/enemy/hazard art still misses the production bar |
 | Restart and control clarity | Provisional pass | One-touch input and immediate restart implemented; uncoached target-player test missing |
 | Audio, privacy, and child safety | Provisional pass | No data collection; ambient audio session respects device context; persistent mute and distinct title/world/boss music implemented; physical listening pending |
 | Evidence completeness | Pending | Physical-iPad quality and target-age enjoyment evidence missing |
@@ -41,4 +41,5 @@ This score intentionally penalizes missing direct player and physical-device evi
 | Commit | Hypothesis | Validation | Result | Score change | Remaining risk |
 | --- | --- | --- | --- | ---: | --- |
 | `430ffd8` | Establish current playable state and evidence | Clean simulator/device builds, visual matrix, boss completion, source audit | Functional baseline confirmed; production-polish and human-evidence gaps identified | 51.4 | Human testing, signed physical install, audio, performance, and asset richness pending |
-| This commit | Distinct musical identities and visible mute controls will raise audio richness without harming stability or layout | Clean simulator/device builds; all six themes launched and remained alive; title/gameplay controls visually inspected | Implementation and runtime gates pass; physical listening deliberately remains unverified | +2.9 | Speaker/headphone mix, fatigue, and target-player sound rating pending |
+| `3f0397a` | Distinct musical identities and visible mute controls will raise audio richness without harming stability or layout | Clean simulator/device builds; all six themes launched and remained alive; title/gameplay controls visually inspected | Implementation and runtime gates pass; physical listening deliberately remains unverified | +2.9 | Speaker/headphone mix, fatigue, and target-player sound rating pending |
+| This commit | Expressive flight states, reactive feedback, and readable defeat/victory motion will make play feel alive | Clean simulator/device builds; flight and boss videos; crash preview; frame inspection; boss completion and world return | Motion states are readable; duplicate game-over controls were caught and repaired before commit | +2.6 | Target-player animation rating and physical frame timing pending |
