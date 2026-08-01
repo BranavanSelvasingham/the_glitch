@@ -1,0 +1,1480 @@
+import SpriteKit
+import UIKit
+
+final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
+    private let backgroundLayer = SKNode()
+    private let gameplayLayer = SKNode()
+    private let hudLayer = SKNode()
+    private let screenOverlay = SKNode()
+
+    private let player = WorldArt.makePlayer()
+    private let scoreLabel = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+    private let chipLabel = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+    private let worldLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
+    private let powerLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
+    private let pauseButton = SKShapeNode()
+    private let gearButton = SKShapeNode()
+    private let gearBackButton = SKShapeNode()
+
+    private var phase: GamePhase = .title
+    private var currentWorld: WorldTheme = .cloudKingdom
+    private var selectedBooster = ProgressStore.selectedBooster
+    private var gearCardFrames: [BoosterStyle: CGRect] = [:]
+    private var backgroundRoot: SKNode?
+    private var backgroundTiles: [SKNode] = []
+
+    private var lastUpdateTime: TimeInterval = 0
+    private var runTime: TimeInterval = 0
+    private var verticalVelocity: CGFloat = 0
+    private var scoreValue: CGFloat = 0
+    private var runChips = 0
+    private var bestScore = UserDefaults.standard.integer(forKey: GameConstants.bestScoreKey)
+    private var lifetimeChips = UserDefaults.standard.integer(forKey: GameConstants.lifetimeChipsKey)
+    private var worldStage = 0
+
+    private var obstacleTimer: TimeInterval = 0
+    private var enemyTimer: TimeInterval = 0
+    private var fallingHazardTimer: TimeInterval = 0
+    private var powerUpTimer: TimeInterval = 0
+    private var shieldTime: TimeInterval = 0
+    private var magnetTime: TimeInterval = 0
+    private var invulnerabilityTime: TimeInterval = 0
+    private var bossFightActive = false
+    private var bossHealth = 0
+    private var bossShotTimer: TimeInterval = 0
+    private var heroShotTimer: TimeInterval = 0
+    private var bossNode: SKNode?
+
+    private var isBoosting = false
+    private var hasBuiltScene = false
+    private let demoMode = ProcessInfo.processInfo.arguments.contains("--demo-mode")
+    private let gearPreviewMode = ProcessInfo.processInfo.arguments.contains("--gear-preview")
+    private let bossPreviewMode = ProcessInfo.processInfo.arguments.contains("--boss-preview")
+
+    private let baseScrollSpeed: CGFloat = 235
+    private let riseAcceleration: CGFloat = 1_260
+    private let fallAcceleration: CGFloat = -920
+    private let maximumRiseSpeed: CGFloat = 530
+    private let maximumFallSpeed: CGFloat = -560
+
+    override func didMove(to view: SKView) {
+        guard !hasBuiltScene else { return }
+        hasBuiltScene = true
+
+        backgroundColor = currentWorld.skyColor
+        anchorPoint = .zero
+        physicsWorld.gravity = .zero
+        physicsWorld.contactDelegate = self
+
+        backgroundLayer.zPosition = -100
+        gameplayLayer.zPosition = 0
+        hudLayer.zPosition = 50
+        screenOverlay.zPosition = 100
+        addChild(backgroundLayer)
+        addChild(gameplayLayer)
+        addChild(hudLayer)
+        addChild(screenOverlay)
+
+        gameplayLayer.addChild(player)
+        WorldArt.applyBoosterStyle(selectedBooster, to: player)
+        buildHUD()
+        setWorld(.cloudKingdom, announce: false)
+        showTitleScreen()
+        layoutScene()
+
+        if gearPreviewMode {
+            run(.sequence([
+                .wait(forDuration: 0.25),
+                .run { [weak self] in self?.showGearScreen() }
+            ]))
+        } else if let storyPage = requestedStoryPreview {
+            run(.sequence([
+                .wait(forDuration: 0.25),
+                .run { [weak self] in self?.showStoryPage(storyPage) }
+            ]))
+        } else if demoMode {
+            run(.sequence([
+                .wait(forDuration: 0.5),
+                .run { [weak self] in self?.startRun() }
+            ]))
+        }
+    }
+
+    override func didChangeSize(_ oldSize: CGSize) {
+        super.didChangeSize(oldSize)
+        guard hasBuiltScene, size.width > 0, size.height > 0 else { return }
+        setWorld(currentWorld, announce: false)
+        layoutScene()
+
+        switch phase {
+        case .title:
+            showTitleScreen()
+        case .story(let page):
+            showStoryPage(page)
+        case .gear:
+            showGearScreen()
+        case .paused:
+            showPauseOverlay()
+        case .gameOver:
+            showGameOverScreen()
+        case .playing:
+            break
+        }
+    }
+
+    private var lowerFlightLimit: CGFloat { max(92, size.height * 0.18) }
+    private var upperFlightLimit: CGFloat { size.height - max(82, size.height * 0.08) }
+    private var currentScrollSpeed: CGFloat {
+        baseScrollSpeed + min(125, CGFloat(runTime) * 1.15)
+    }
+    private var activeWorldDuration: TimeInterval {
+        demoMode ? 5 : GameConstants.worldDuration
+    }
+    private var requestedDemoWorld: Int {
+        guard
+            let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--demo-world=") }),
+            let value = Int(argument.replacingOccurrences(of: "--demo-world=", with: ""))
+        else {
+            return 0
+        }
+        return max(0, min(WorldTheme.allCases.count - 1, value))
+    }
+    private var locksRequestedDemoWorld: Bool {
+        demoMode && ProcessInfo.processInfo.arguments.contains(where: { $0.hasPrefix("--demo-world=") })
+    }
+    private var requestedStoryPreview: Int? {
+        guard
+            let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--story-page=") }),
+            let value = Int(argument.replacingOccurrences(of: "--story-page=", with: ""))
+        else {
+            return nil
+        }
+        return max(0, min(2, value))
+    }
+
+    // MARK: - Screens
+
+    private func showTitleScreen() {
+        phase = .title
+        screenOverlay.removeAllChildren()
+        hudLayer.isHidden = true
+        gameplayLayer.isPaused = false
+        player.isHidden = true
+        player.removeAllActions()
+
+        let artSize = min(390, size.height * 0.62)
+        let artFrame = SKShapeNode(
+            rectOf: CGSize(width: artSize + 12, height: artSize + 12),
+            cornerRadius: 30
+        )
+        artFrame.position = CGPoint(x: size.width * 0.23, y: size.height * 0.52)
+        artFrame.fillColor = UIColor.white.withAlphaComponent(0.94)
+        artFrame.strokeColor = UIColor(red: 1, green: 0.83, blue: 0.20, alpha: 1)
+        artFrame.lineWidth = 5
+        screenOverlay.addChild(artFrame)
+
+        let keyArt = SKSpriteNode(imageNamed: "KeyArt")
+        keyArt.size = CGSize(width: artSize, height: artSize)
+        artFrame.addChild(keyArt)
+
+        let rightColumnX = size.width * 0.66
+
+        let title = makeLabel("AIDAN'S WORLD RUSH", size: 44, color: .white)
+        title.position = CGPoint(x: rightColumnX, y: size.height * 0.77)
+        screenOverlay.addChild(title)
+
+        let subtitle = makeLabel(
+            "THE GLITCH IS STEALING EVERY WORLD'S SPARK!",
+            size: 21,
+            color: UIColor(red: 1, green: 0.86, blue: 0.20, alpha: 1)
+        )
+        subtitle.position = CGPoint(x: rightColumnX, y: size.height * 0.69)
+        screenOverlay.addChild(subtitle)
+
+        let worlds = SKNode()
+        worlds.position = CGPoint(x: rightColumnX, y: size.height * 0.48)
+        for (index, world) in WorldTheme.allCases.enumerated() {
+            let badge = WorldArt.makeWorldBadge(for: world, radius: 37)
+            badge.position.x = CGFloat(index - 2) * 105 + 52
+            worlds.addChild(badge)
+        }
+        screenOverlay.addChild(worlds)
+
+        let best = makeLabel(
+            "BEST SCORE  \(String(format: "%04d", bestScore))    •    SAVED CHIPS  \(lifetimeChips)",
+            size: 18,
+            color: .white
+        )
+        best.position = CGPoint(x: rightColumnX, y: size.height * 0.34)
+        screenOverlay.addChild(best)
+
+        let daily = makeLabel(
+            "DAILY QUEST  ★ \(ProgressStore.dailyProgress) / \(ProgressStore.dailyTarget)    •    BADGES \(ProgressStore.unlockedAchievementCount) / \(Achievement.allCases.count)",
+            size: 15,
+            color: UIColor(red: 0.12, green: 0.12, blue: 0.24, alpha: 1)
+        )
+        daily.position = CGPoint(x: rightColumnX, y: size.height * 0.295)
+        screenOverlay.addChild(daily)
+
+        configureButton(
+            gearButton,
+            text: "GEAR  •  \(selectedBooster.name)",
+            width: 300,
+            color: selectedBooster.trailColor
+        )
+        gearButton.position = CGPoint(x: rightColumnX, y: size.height * 0.235)
+        screenOverlay.addChild(gearButton)
+
+        let prompt = makePill(
+            text: "TAP TO BEGIN THE STORY",
+            width: 330,
+            color: WorldArt.glitchPink
+        )
+        prompt.position = CGPoint(x: rightColumnX, y: size.height * 0.15)
+        prompt.run(.repeatForever(.sequence([
+            .scale(to: 1.04, duration: 0.55),
+            .scale(to: 0.98, duration: 0.55)
+        ])))
+        screenOverlay.addChild(prompt)
+
+    }
+
+    private func showGearScreen() {
+        phase = .gear
+        screenOverlay.removeAllChildren()
+        hudLayer.isHidden = true
+        player.isHidden = true
+        gearCardFrames.removeAll()
+
+        let shade = SKShapeNode(rect: CGRect(origin: .zero, size: size))
+        shade.fillColor = UIColor(red: 0.05, green: 0.04, blue: 0.14, alpha: 0.90)
+        shade.strokeColor = .clear
+        screenOverlay.addChild(shade)
+
+        let title = makeLabel("AIDAN'S BOOSTER GARAGE", size: 38, color: .white)
+        title.position = CGPoint(x: size.width / 2, y: size.height * 0.83)
+        screenOverlay.addChild(title)
+
+        let subtitle = makeLabel(
+            "Spark Chips permanently unlock new booster colors",
+            size: 18,
+            color: UIColor(red: 1, green: 0.86, blue: 0.20, alpha: 1)
+        )
+        subtitle.position = CGPoint(x: size.width / 2, y: size.height * 0.77)
+        screenOverlay.addChild(subtitle)
+
+        let spacing = min(235, size.width * 0.205)
+        let cardCenterY = size.height * 0.52
+        for (index, style) in BoosterStyle.allCases.enumerated() {
+            let centerX = size.width / 2 + (CGFloat(index) - 1.5) * spacing
+            let cardSize = CGSize(width: 205, height: 270)
+            gearCardFrames[style] = CGRect(
+                x: centerX - cardSize.width / 2,
+                y: cardCenterY - cardSize.height / 2,
+                width: cardSize.width,
+                height: cardSize.height
+            )
+
+            let unlocked = lifetimeChips >= style.unlockCost
+            let selected = selectedBooster == style
+            let card = SKShapeNode(rectOf: cardSize, cornerRadius: 24)
+            card.position = CGPoint(x: centerX, y: cardCenterY)
+            card.fillColor = unlocked
+                ? UIColor.white.withAlphaComponent(0.97)
+                : UIColor(red: 0.16, green: 0.14, blue: 0.24, alpha: 0.98)
+            card.strokeColor = selected ? style.trailColor : UIColor.white.withAlphaComponent(0.48)
+            card.lineWidth = selected ? 7 : 3
+            screenOverlay.addChild(card)
+
+            let booster = SKShapeNode(
+                rectOf: CGSize(width: 62, height: 100),
+                cornerRadius: 20
+            )
+            booster.position.y = 43
+            booster.fillColor = unlocked ? style.bodyColor : UIColor.darkGray
+            booster.strokeColor = unlocked ? style.trailColor : UIColor.gray
+            booster.lineWidth = 5
+            booster.glowWidth = selected ? 6 : 0
+            card.addChild(booster)
+
+            let flame = SKShapeNode(path: {
+                let path = CGMutablePath()
+                path.move(to: CGPoint(x: -17, y: -48))
+                path.addLine(to: CGPoint(x: 17, y: -48))
+                path.addLine(to: CGPoint(x: 0, y: -95))
+                path.closeSubpath()
+                return path
+            }())
+            flame.fillColor = UIColor(red: 1, green: 0.80, blue: 0.16, alpha: 1)
+            flame.strokeColor = style.trailColor
+            flame.lineWidth = 4
+            booster.addChild(flame)
+
+            let name = makeLabel(style.name, size: 16, color: unlocked ? WorldArt.ink : .white)
+            name.position.y = -57
+            card.addChild(name)
+
+            let statusText: String
+            if selected {
+                statusText = "EQUIPPED"
+            } else if unlocked {
+                statusText = "TAP TO EQUIP"
+            } else {
+                statusText = "UNLOCKS AT ★ \(style.unlockCost)"
+            }
+            let status = makeLabel(
+                statusText,
+                size: 13,
+                color: selected ? style.bodyColor : (unlocked ? UIColor.darkGray : style.trailColor)
+            )
+            status.position.y = -94
+            card.addChild(status)
+        }
+
+        let unlockedBadges = Achievement.allCases
+            .filter(ProgressStore.isAchievementUnlocked)
+            .map(\.title)
+        let badgeText = unlockedBadges.isEmpty
+            ? "BADGES: Begin your first flight to earn one"
+            : "BADGES: " + unlockedBadges.joined(separator: "  •  ")
+        let badges = makeLabel(badgeText, size: 14, color: .white)
+        badges.position = CGPoint(x: size.width / 2, y: size.height * 0.24)
+        screenOverlay.addChild(badges)
+
+        configureButton(
+            gearBackButton,
+            text: "BACK TO ADVENTURE",
+            width: 270,
+            color: UIColor(red: 1, green: 0.78, blue: 0.20, alpha: 1)
+        )
+        gearBackButton.position = CGPoint(x: size.width / 2, y: size.height * 0.14)
+        screenOverlay.addChild(gearBackButton)
+    }
+
+    private func showStoryPage(_ page: Int) {
+        phase = .story(page: page)
+        screenOverlay.removeAllChildren()
+        hudLayer.isHidden = true
+        player.isHidden = true
+
+        let shade = SKShapeNode(rect: CGRect(origin: .zero, size: size))
+        shade.fillColor = UIColor(red: 0.04, green: 0.03, blue: 0.12, alpha: 0.58)
+        shade.strokeColor = .clear
+        screenOverlay.addChild(shade)
+
+        let panel = SKShapeNode(
+            rectOf: CGSize(width: min(760, size.width * 0.74), height: min(410, size.height * 0.66)),
+            cornerRadius: 30
+        )
+        panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        panel.fillColor = UIColor(red: 0.98, green: 0.96, blue: 0.88, alpha: 0.98)
+        panel.strokeColor = currentWorld.accentColor
+        panel.lineWidth = 6
+        screenOverlay.addChild(panel)
+
+        let chapter = makeLabel("STORY  \(page + 1) / 3", size: 15, color: UIColor.darkGray)
+        chapter.position = CGPoint(x: 0, y: panel.frame.height * 0.37)
+        panel.addChild(chapter)
+
+        let title: String
+        let body: String
+        switch page {
+        case 0:
+            title = "THE BOOSTER CHOOSES AIDAN"
+            body = "After bedtime, a tiny world gate opens in Aidan's room.\nA brave booster pack zooms out and asks for his help."
+            let miniAidan = WorldArt.makePlayer()
+            miniAidan.physicsBody = nil
+            miniAidan.position = CGPoint(x: -panel.frame.width * 0.31, y: -10)
+            miniAidan.setScale(1.15)
+            panel.addChild(miniAidan)
+        case 1:
+            title = "THE GLITCH BREAKS THE GATES"
+            body = "A sneaky shadow called The Glitch has mixed up four wonderful worlds.\nIts bug-beasts are stealing every world's golden Spark Chips."
+            let villain = WorldArt.makeGlitchEnemy()
+            villain.physicsBody = nil
+            villain.position = CGPoint(x: -panel.frame.width * 0.31, y: -8)
+            villain.setScale(1.3)
+            panel.addChild(villain)
+        default:
+            title = "RACE, RESCUE, RESTORE!"
+            body = "Hold to boost up. Release to glide down.\nGather chips, use shields and magnets, and outrun The Glitch!"
+            let chip = WorldArt.makeChip()
+            chip.physicsBody = nil
+            chip.position = CGPoint(x: -panel.frame.width * 0.31, y: 25)
+            chip.setScale(1.5)
+            panel.addChild(chip)
+            let shield = WorldArt.makePowerUp(.shield)
+            shield.physicsBody = nil
+            shield.position = CGPoint(x: -panel.frame.width * 0.36, y: -72)
+            panel.addChild(shield)
+            let magnet = WorldArt.makePowerUp(.magnet)
+            magnet.physicsBody = nil
+            magnet.position = CGPoint(x: -panel.frame.width * 0.25, y: -72)
+            panel.addChild(magnet)
+        }
+
+        let titleLabel = makeLabel(title, size: 30, color: WorldArt.ink)
+        titleLabel.position = CGPoint(x: panel.frame.width * 0.12, y: 90)
+        panel.addChild(titleLabel)
+
+        let bodyLabel = makeMultilineLabel(
+            body,
+            size: 19,
+            color: UIColor(red: 0.16, green: 0.14, blue: 0.24, alpha: 1),
+            width: panel.frame.width * 0.53
+        )
+        bodyLabel.position = CGPoint(x: panel.frame.width * 0.12, y: -10)
+        panel.addChild(bodyLabel)
+
+        let promptText = page == 2 ? "TAP TO FLY!" : "TAP FOR NEXT"
+        let prompt = makePill(text: promptText, width: 220, color: currentWorld.accentColor)
+        prompt.position = CGPoint(x: panel.frame.width * 0.12, y: -panel.frame.height * 0.34)
+        panel.addChild(prompt)
+    }
+
+    private func showPauseOverlay() {
+        screenOverlay.removeAllChildren()
+
+        let shade = SKShapeNode(rect: CGRect(origin: .zero, size: size))
+        shade.fillColor = UIColor.black.withAlphaComponent(0.62)
+        shade.strokeColor = .clear
+        screenOverlay.addChild(shade)
+
+        let panel = SKShapeNode(rectOf: CGSize(width: 390, height: 190), cornerRadius: 28)
+        panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        panel.fillColor = UIColor(red: 0.08, green: 0.06, blue: 0.18, alpha: 0.98)
+        panel.strokeColor = currentWorld.accentColor
+        panel.lineWidth = 5
+        screenOverlay.addChild(panel)
+
+        let title = makeLabel("ADVENTURE PAUSED", size: 30, color: .white)
+        title.position.y = 40
+        panel.addChild(title)
+
+        let world = makeLabel(currentWorld.name, size: 17, color: currentWorld.accentColor)
+        world.position.y = 0
+        panel.addChild(world)
+
+        let prompt = makeLabel("Tap pause to keep flying", size: 17, color: .white)
+        prompt.position.y = -48
+        panel.addChild(prompt)
+    }
+
+    private func showGameOverScreen() {
+        screenOverlay.removeAllChildren()
+
+        let shade = SKShapeNode(rect: CGRect(origin: .zero, size: size))
+        shade.fillColor = UIColor.black.withAlphaComponent(0.67)
+        shade.strokeColor = .clear
+        screenOverlay.addChild(shade)
+
+        let panel = SKShapeNode(rectOf: CGSize(width: 500, height: 350), cornerRadius: 30)
+        panel.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        panel.fillColor = UIColor(red: 0.98, green: 0.96, blue: 0.88, alpha: 0.99)
+        panel.strokeColor = WorldArt.glitchPink
+        panel.lineWidth = 6
+        screenOverlay.addChild(panel)
+
+        let villain = WorldArt.makeGlitchEnemy()
+        villain.physicsBody = nil
+        villain.position = CGPoint(x: -185, y: 98)
+        villain.setScale(0.82)
+        panel.addChild(villain)
+
+        let title = makeLabel("THE GLITCH GOT YOU!", size: 32, color: WorldArt.ink)
+        title.position = CGPoint(x: 35, y: 108)
+        panel.addChild(title)
+
+        let score = Int(scoreValue)
+        let scoreText = makeLabel("SCORE  \(score)", size: 29, color: WorldArt.glitchPink)
+        scoreText.position.y = 42
+        panel.addChild(scoreText)
+
+        let results = makeLabel(
+            "BEST  \(bestScore)    •    CHIPS FOUND  \(runChips)",
+            size: 19,
+            color: UIColor.darkGray
+        )
+        results.position.y = -4
+        panel.addChild(results)
+
+        let encouragement = makeLabel(
+            score == bestScore && score > 0 ? "NEW BEST! THE WORLDS ARE CHEERING!" : "AIDAN ALWAYS TRIES AGAIN!",
+            size: 16,
+            color: currentWorld.groundColor
+        )
+        encouragement.position.y = -48
+        panel.addChild(encouragement)
+
+        let prompt = makePill(text: "TAP TO FLY AGAIN", width: 270, color: currentWorld.accentColor)
+        prompt.position.y = -114
+        prompt.run(.repeatForever(.sequence([
+            .scale(to: 1.04, duration: 0.5),
+            .scale(to: 0.98, duration: 0.5)
+        ])))
+        panel.addChild(prompt)
+    }
+
+    // MARK: - Game lifecycle
+
+    private func startRun() {
+        phase = .playing
+        screenOverlay.removeAllChildren()
+        hudLayer.isHidden = false
+        gameplayLayer.isPaused = false
+        player.removeAllActions()
+        player.isHidden = false
+
+        gameplayLayer.removeAllChildren()
+        gameplayLayer.addChild(player)
+        player.position = CGPoint(x: size.width * 0.25, y: size.height * 0.56)
+        player.zRotation = 0
+        player.alpha = 1
+        player.childNode(withName: "shieldAura")?.isHidden = true
+        player.childNode(withName: "magnetAura")?.isHidden = true
+        player.childNode(withName: "flame")?.isHidden = true
+        WorldArt.applyBoosterStyle(selectedBooster, to: player)
+
+        let startingWorld = demoMode ? requestedDemoWorld : 0
+        runTime = demoMode ? TimeInterval(startingWorld) * activeWorldDuration + 0.35 : 0
+        verticalVelocity = 0
+        scoreValue = 0
+        runChips = 0
+        worldStage = startingWorld
+        obstacleTimer = 1.8
+        enemyTimer = 4.2
+        fallingHazardTimer = 6.3
+        powerUpTimer = 8.2
+        shieldTime = demoMode ? 999 : 0
+        magnetTime = demoMode ? 999 : 0
+        invulnerabilityTime = 1.4
+        bossFightActive = false
+        bossHealth = 0
+        bossNode = nil
+        hudLayer.childNode(withName: "bossBar")?.removeFromParent()
+        isBoosting = false
+        lastUpdateTime = 0
+
+        setWorld(WorldTheme.allCases[startingWorld], announce: true)
+        updateHUD()
+        showToast("HOLD TO BOOST  •  RELEASE TO GLIDE", color: .white, duration: 3.2)
+        ProgressStore.unlock(.firstFlight)
+        GameAudio.shared.play(.begin)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        if bossPreviewMode {
+            run(.sequence([
+                .wait(forDuration: 1.0),
+                .run { [weak self] in self?.beginBossFight() }
+            ]))
+        }
+    }
+
+    private func endRun() {
+        guard phase == .playing else { return }
+        phase = .gameOver
+        isBoosting = false
+        player.childNode(withName: "flame")?.isHidden = true
+        gameplayLayer.isPaused = true
+        hudLayer.childNode(withName: "bossBar")?.removeFromParent()
+
+        let finalScore = Int(scoreValue)
+        if finalScore > bestScore {
+            bestScore = finalScore
+            UserDefaults.standard.set(bestScore, forKey: GameConstants.bestScoreKey)
+        }
+
+        GameAudio.shared.play(.crash)
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        showGameOverScreen()
+    }
+
+    private func togglePause() {
+        switch phase {
+        case .playing:
+            phase = .paused
+            isBoosting = false
+            gameplayLayer.isPaused = true
+            showPauseOverlay()
+        case .paused:
+            phase = .playing
+            gameplayLayer.isPaused = false
+            screenOverlay.removeAllChildren()
+            lastUpdateTime = 0
+        default:
+            break
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    // MARK: - World progression
+
+    private func setWorld(_ world: WorldTheme, announce: Bool) {
+        currentWorld = world
+        backgroundColor = world.skyColor
+        backgroundLayer.removeAllChildren()
+
+        let backdrop = WorldArt.makeBackdrop(for: world, size: size)
+        backgroundLayer.addChild(backdrop)
+        backgroundRoot = backdrop
+        backgroundTiles = backdrop.children.filter { $0.name == "worldTile" }
+        worldLabel.text = world.name
+
+        if announce {
+            showWorldBanner(world)
+        }
+    }
+
+    private func advanceWorldIfNeeded() {
+        guard !locksRequestedDemoWorld else { return }
+        let newStage = Int(runTime / activeWorldDuration)
+        guard newStage != worldStage else { return }
+
+        worldStage = newStage
+        let worlds = WorldTheme.allCases
+        if newStage > 0, newStage.isMultiple(of: worlds.count) {
+            beginBossFight()
+            return
+        }
+
+        let nextWorld = worlds[newStage % worlds.count]
+        scoreValue += 100
+        invulnerabilityTime = 1.5
+
+        gameplayLayer.removeAllChildren()
+        gameplayLayer.addChild(player)
+        obstacleTimer = 2.1
+        enemyTimer = 4.0
+        fallingHazardTimer = 6.0
+        setWorld(nextWorld, announce: true)
+        if nextWorld == .storybookCastle {
+            awardAchievement(.worldTraveler)
+        }
+
+        let flash = SKShapeNode(rect: CGRect(origin: .zero, size: size))
+        flash.fillColor = .white
+        flash.strokeColor = .clear
+        flash.alpha = 0.75
+        flash.zPosition = 80
+        hudLayer.addChild(flash)
+        flash.run(.sequence([.fadeOut(withDuration: 0.55), .removeFromParent()]))
+
+        GameAudio.shared.play(.worldChange)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    // MARK: - Boss fight
+
+    private func beginBossFight() {
+        bossFightActive = true
+        bossHealth = 12
+        bossShotTimer = 1.5
+        heroShotTimer = 0.9
+        invulnerabilityTime = 1.8
+
+        gameplayLayer.removeAllChildren()
+        gameplayLayer.addChild(player)
+
+        let boss = WorldArt.makeGlitchBoss()
+        boss.position = CGPoint(x: size.width + 180, y: size.height * 0.56)
+        boss.zPosition = 25
+        gameplayLayer.addChild(boss)
+        bossNode = boss
+
+        let entrance = SKAction.moveTo(x: size.width * 0.79, duration: 1.15)
+        entrance.timingMode = .easeOut
+        let attackPattern = SKAction.repeatForever(.sequence([
+            .moveTo(y: upperFlightLimit - 115, duration: 1.5),
+            .moveTo(y: lowerFlightLimit + 150, duration: 1.5)
+        ]))
+        boss.run(.sequence([entrance, attackPattern]))
+
+        showBossBar()
+        showToast("BOSS BATTLE  •  BOOSTER BLASTS READY!", color: WorldArt.glitchPink, duration: 2.3)
+        GameAudio.shared.play(.worldChange)
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+    }
+
+    private func updateBossFight(deltaTime: TimeInterval) {
+        guard bossFightActive, bossNode?.parent != nil else { return }
+        bossShotTimer -= deltaTime
+        heroShotTimer -= deltaTime
+
+        if heroShotTimer <= 0 {
+            fireHeroBolt()
+            heroShotTimer = 0.62
+        }
+        if bossShotTimer <= 0 {
+            fireBossOrb()
+            bossShotTimer = max(0.82, 1.45 - runTime * 0.0015)
+        }
+    }
+
+    private func fireHeroBolt() {
+        guard let boss = bossNode else { return }
+        let bolt = WorldArt.makeHeroBolt(color: selectedBooster.trailColor)
+        bolt.position = CGPoint(x: player.position.x + 67, y: player.position.y + 2)
+        bolt.zPosition = 12
+        gameplayLayer.addChild(bolt)
+        bolt.run(.sequence([
+            .move(to: CGPoint(x: boss.position.x + 40, y: boss.position.y), duration: 0.58),
+            .removeFromParent()
+        ]))
+    }
+
+    private func fireBossOrb() {
+        guard let boss = bossNode else { return }
+        let orb = WorldArt.makeBossOrb()
+        orb.position = CGPoint(
+            x: boss.position.x - 95,
+            y: boss.position.y + CGFloat.random(in: -70...70)
+        )
+        orb.zPosition = 14
+        gameplayLayer.addChild(orb)
+        orb.run(.sequence([
+            .moveBy(
+                x: -(size.width + 220),
+                y: CGFloat.random(in: -140...140),
+                duration: 3.25
+            ),
+            .removeFromParent()
+        ]))
+    }
+
+    private func damageBoss(with bolt: SKNode, at point: CGPoint) {
+        guard bossFightActive, bolt.parent != nil else { return }
+        bolt.removeFromParent()
+        bossHealth = max(0, bossHealth - 1)
+        scoreValue += 35
+        updateBossBar()
+        makeBurst(at: point, colors: [WorldArt.glitchPink, .white], count: 9)
+
+        bossNode?.run(.sequence([
+            .fadeAlpha(to: 0.28, duration: 0.06),
+            .fadeAlpha(to: 1, duration: 0.08)
+        ]))
+        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.38)
+
+        if bossHealth == 0 {
+            defeatBoss()
+        }
+    }
+
+    private func defeatBoss() {
+        guard bossFightActive else { return }
+        bossFightActive = false
+        scoreValue += 1_000
+
+        if let boss = bossNode {
+            makeBurst(
+                at: boss.position,
+                colors: [WorldArt.glitchPink, WorldArt.glitchBlue, .white],
+                count: 38
+            )
+            boss.removeFromParent()
+        }
+        bossNode = nil
+        hudLayer.childNode(withName: "bossBar")?.removeFromParent()
+
+        awardAchievement(.glitchBuster)
+        showToast("THE GLITCH RETREATS!  +1000", color: UIColor(red: 1, green: 0.84, blue: 0.18, alpha: 1), duration: 2.6)
+        GameAudio.shared.play(.powerUp)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+        runTime = TimeInterval(worldStage) * activeWorldDuration + 0.2
+        invulnerabilityTime = 2.0
+        obstacleTimer = 2.4
+        enemyTimer = 4.5
+        fallingHazardTimer = 6.2
+        setWorld(.cloudKingdom, announce: true)
+    }
+
+    private func showBossBar() {
+        hudLayer.childNode(withName: "bossBar")?.removeFromParent()
+
+        let root = SKNode()
+        root.name = "bossBar"
+        root.position = CGPoint(x: size.width / 2 - 170, y: size.height - 105)
+        root.zPosition = 92
+
+        let title = makeLabel("THE GLITCH", size: 15, color: .white)
+        title.position = CGPoint(x: 170, y: 24)
+        root.addChild(title)
+
+        let background = SKShapeNode(
+            rect: CGRect(x: 0, y: -9, width: 340, height: 18),
+            cornerRadius: 9
+        )
+        background.fillColor = UIColor.black.withAlphaComponent(0.62)
+        background.strokeColor = .white
+        background.lineWidth = 2
+        root.addChild(background)
+
+        let fill = SKShapeNode(
+            rect: CGRect(x: 0, y: -7, width: 336, height: 14),
+            cornerRadius: 7
+        )
+        fill.name = "bossHealthFill"
+        fill.position.x = 2
+        fill.fillColor = WorldArt.glitchPink
+        fill.strokeColor = .clear
+        root.addChild(fill)
+
+        hudLayer.addChild(root)
+        updateBossBar()
+    }
+
+    private func updateBossBar() {
+        let ratio = CGFloat(bossHealth) / 12
+        hudLayer
+            .childNode(withName: "bossBar")?
+            .childNode(withName: "bossHealthFill")?
+            .xScale = ratio
+    }
+
+    private func showWorldBanner(_ world: WorldTheme) {
+        hudLayer.childNode(withName: "worldBanner")?.removeFromParent()
+
+        let banner = SKNode()
+        banner.name = "worldBanner"
+        banner.position = CGPoint(x: size.width / 2, y: size.height * 0.68)
+        banner.zPosition = 90
+
+        let panel = SKShapeNode(rectOf: CGSize(width: 470, height: 112), cornerRadius: 24)
+        panel.fillColor = UIColor.white.withAlphaComponent(0.94)
+        panel.strokeColor = world.accentColor
+        panel.lineWidth = 5
+        banner.addChild(panel)
+
+        let badge = WorldArt.makeWorldBadge(for: world, radius: 35)
+        badge.position.x = -184
+        panel.addChild(badge)
+
+        let title = makeLabel(world.name, size: 27, color: WorldArt.ink)
+        title.position = CGPoint(x: 36, y: 17)
+        panel.addChild(title)
+
+        let subtitle = makeLabel(world.subtitle, size: 15, color: UIColor.darkGray)
+        subtitle.position = CGPoint(x: 36, y: -22)
+        panel.addChild(subtitle)
+
+        banner.alpha = 0
+        banner.setScale(0.88)
+        hudLayer.addChild(banner)
+        banner.run(.sequence([
+            .group([.fadeIn(withDuration: 0.25), .scale(to: 1, duration: 0.25)]),
+            .wait(forDuration: 2.0),
+            .group([.fadeOut(withDuration: 0.35), .moveBy(x: 0, y: 25, duration: 0.35)]),
+            .removeFromParent()
+        ]))
+    }
+
+    // MARK: - Spawning
+
+    private func spawnObstacleCourse() {
+        let floorY = lowerFlightLimit - 38
+        let ceilingY = upperFlightLimit + 48
+        let gapHeight = max(245, size.height * 0.31 - CGFloat(runTime) * 1.25)
+        let minCenter = floorY + gapHeight / 2 + 40
+        let maxCenter = ceilingY - gapHeight / 2 - 40
+        guard maxCenter > minCenter else { return }
+
+        let gapCenter = CGFloat.random(in: minCenter...maxCenter)
+        let barrierWidth: CGFloat = 78
+        let spawnX = size.width + 120
+
+        let bottomHeight = max(28, gapCenter - gapHeight / 2 - floorY)
+        let bottom = WorldArt.makeBarrier(
+            for: currentWorld,
+            size: CGSize(width: barrierWidth, height: bottomHeight)
+        )
+        bottom.position = CGPoint(x: spawnX, y: floorY + bottomHeight / 2)
+        addMovingNode(bottom)
+
+        let topHeight = max(28, ceilingY - (gapCenter + gapHeight / 2))
+        let top = WorldArt.makeBarrier(
+            for: currentWorld,
+            size: CGSize(width: barrierWidth, height: topHeight)
+        )
+        top.position = CGPoint(x: spawnX, y: gapCenter + gapHeight / 2 + topHeight / 2)
+        addMovingNode(top)
+
+        let chipCount = 5
+        for index in 0..<chipCount {
+            let chip = WorldArt.makeChip()
+            let arc = sin(CGFloat(index) / CGFloat(chipCount - 1) * .pi) * gapHeight * 0.16
+            chip.position = CGPoint(
+                x: spawnX + CGFloat(index - 2) * 58,
+                y: gapCenter + arc - gapHeight * 0.07
+            )
+            addMovingNode(chip)
+        }
+    }
+
+    private func spawnGlitchEnemy() {
+        let enemy = WorldArt.makeGlitchEnemy()
+        enemy.position = CGPoint(
+            x: size.width + 110,
+            y: CGFloat.random(in: (lowerFlightLimit + 65)...(upperFlightLimit - 65))
+        )
+
+        let movement = SKAction.moveBy(
+            x: -(size.width + 260),
+            y: CGFloat.random(in: -90...90),
+            duration: TimeInterval((size.width + 260) / (currentScrollSpeed * 1.08))
+        )
+        enemy.run(.sequence([movement, .removeFromParent()]))
+        enemy.children.first?.run(.repeatForever(.sequence([
+            .moveBy(x: 0, y: 28, duration: 0.48),
+            .moveBy(x: 0, y: -28, duration: 0.48)
+        ])))
+        gameplayLayer.addChild(enemy)
+    }
+
+    private func spawnFallingHazard() {
+        let hazard = WorldArt.makeFallingHazard(for: currentWorld)
+        hazard.position = CGPoint(
+            x: CGFloat.random(in: (size.width * 0.68)...(size.width * 1.05)),
+            y: upperFlightLimit + 95
+        )
+        let fall = SKAction.moveBy(
+            x: -size.width * 0.48,
+            y: -(size.height + 230),
+            duration: max(3.0, 4.5 - runTime * 0.008)
+        )
+        hazard.run(.sequence([fall, .removeFromParent()]))
+        gameplayLayer.addChild(hazard)
+    }
+
+    private func spawnPowerUp() {
+        let kind: PowerUpKind = Int(runTime / 10).isMultiple(of: 2) ? .shield : .magnet
+        let powerUp = WorldArt.makePowerUp(kind)
+        powerUp.position = CGPoint(
+            x: size.width + 90,
+            y: CGFloat.random(in: (lowerFlightLimit + 85)...(upperFlightLimit - 85))
+        )
+        addMovingNode(powerUp)
+    }
+
+    private func addMovingNode(_ node: SKNode) {
+        let distance = node.position.x + 180
+        let duration = TimeInterval(distance / currentScrollSpeed)
+        node.run(.sequence([
+            .moveBy(x: -distance, y: 0, duration: duration),
+            .removeFromParent()
+        ]))
+        gameplayLayer.addChild(node)
+    }
+
+    // MARK: - Update loop
+
+    override func update(_ currentTime: TimeInterval) {
+        if lastUpdateTime == 0 {
+            lastUpdateTime = currentTime
+            return
+        }
+
+        let deltaTime = min(TimeInterval(currentTime - lastUpdateTime), 1.0 / 30.0)
+        lastUpdateTime = currentTime
+
+        switch phase {
+        case .title, .story, .gear, .gameOver:
+            updateBackground(deltaTime: CGFloat(deltaTime), speed: 42)
+        case .paused:
+            return
+        case .playing:
+            updateRun(deltaTime: deltaTime, currentTime: currentTime)
+        }
+    }
+
+    private func updateRun(deltaTime: TimeInterval, currentTime: TimeInterval) {
+        runTime += deltaTime
+        scoreValue += CGFloat(deltaTime) * (10 + min(10, CGFloat(runTime) * 0.05))
+
+        if demoMode {
+            let target = size.height * (0.53 + sin(currentTime * 0.9) * 0.16)
+            isBoosting = player.position.y < target
+        }
+
+        updatePlayer(deltaTime: CGFloat(deltaTime), currentTime: currentTime)
+        updateBackground(deltaTime: CGFloat(deltaTime), speed: currentScrollSpeed)
+        if bossFightActive {
+            updateBossFight(deltaTime: deltaTime)
+        } else {
+            updateSpawners(deltaTime: deltaTime)
+            advanceWorldIfNeeded()
+        }
+        updatePowerUps(deltaTime: deltaTime)
+        if scoreValue >= 750 {
+            awardAchievement(.highFlyer)
+        }
+        updateHUD()
+    }
+
+    private func updatePlayer(deltaTime: CGFloat, currentTime: TimeInterval) {
+        let acceleration = isBoosting ? riseAcceleration : fallAcceleration
+        verticalVelocity += acceleration * deltaTime
+        verticalVelocity = min(max(verticalVelocity, maximumFallSpeed), maximumRiseSpeed)
+        player.position.y += verticalVelocity * deltaTime
+
+        if player.position.y <= lowerFlightLimit {
+            player.position.y = lowerFlightLimit
+            verticalVelocity = max(verticalVelocity, 0)
+        } else if player.position.y >= upperFlightLimit {
+            player.position.y = upperFlightLimit
+            verticalVelocity = min(verticalVelocity, 0)
+        }
+
+        player.zRotation = max(-0.32, min(0.34, verticalVelocity / 1_360))
+        if let flame = player.childNode(withName: "flame") {
+            flame.isHidden = !isBoosting
+            if isBoosting {
+                flame.yScale = 0.84 + CGFloat(sin(currentTime * 23)) * 0.15
+                flame.xScale = 0.94 + CGFloat(cos(currentTime * 17)) * 0.08
+            }
+        }
+
+        if invulnerabilityTime > 0 {
+            player.alpha = sin(currentTime * 24) > 0 ? 1 : 0.38
+        } else {
+            player.alpha = 1
+        }
+    }
+
+    private func updateBackground(deltaTime: CGFloat, speed: CGFloat) {
+        for tile in backgroundTiles {
+            tile.position.x -= speed * deltaTime
+        }
+
+        for tile in backgroundTiles where tile.position.x + size.width < 0 {
+            let rightmost = backgroundTiles.map(\.position.x).max() ?? 0
+            tile.position.x = rightmost + size.width
+        }
+    }
+
+    private func updateSpawners(deltaTime: TimeInterval) {
+        obstacleTimer -= deltaTime
+        enemyTimer -= deltaTime
+        fallingHazardTimer -= deltaTime
+        powerUpTimer -= deltaTime
+
+        if obstacleTimer <= 0 {
+            spawnObstacleCourse()
+            obstacleTimer = max(1.85, 2.8 - runTime * 0.006)
+        }
+        if enemyTimer <= 0 {
+            spawnGlitchEnemy()
+            enemyTimer = max(3.0, Double.random(in: 4.0...5.4) - runTime * 0.004)
+        }
+        if fallingHazardTimer <= 0 {
+            spawnFallingHazard()
+            fallingHazardTimer = max(4.4, Double.random(in: 5.8...7.3) - runTime * 0.004)
+        }
+        if powerUpTimer <= 0 {
+            spawnPowerUp()
+            powerUpTimer = Double.random(in: 10.5...13.5)
+        }
+    }
+
+    private func updatePowerUps(deltaTime: TimeInterval) {
+        shieldTime = max(0, shieldTime - deltaTime)
+        magnetTime = max(0, magnetTime - deltaTime)
+        invulnerabilityTime = max(0, invulnerabilityTime - deltaTime)
+
+        player.childNode(withName: "shieldAura")?.isHidden = shieldTime <= 0
+        player.childNode(withName: "magnetAura")?.isHidden = magnetTime <= 0
+
+        guard magnetTime > 0 else { return }
+        for chip in gameplayLayer.children where chip.name == "chip" {
+            let dx = player.position.x - chip.position.x
+            let dy = player.position.y - chip.position.y
+            let distance = max(1, hypot(dx, dy))
+            guard distance < size.width * 0.58 else { continue }
+            let pull = CGFloat(deltaTime) * 720
+            chip.position.x += dx / distance * pull
+            chip.position.y += dy / distance * pull
+        }
+    }
+
+    // MARK: - Contacts and pickups
+
+    func didBegin(_ contact: SKPhysicsContact) {
+        let combinedCategories = contact.bodyA.categoryBitMask | contact.bodyB.categoryBitMask
+        if combinedCategories == (PhysicsCategory.heroShot | PhysicsCategory.boss) {
+            let boltBody = contact.bodyA.categoryBitMask == PhysicsCategory.heroShot
+                ? contact.bodyA
+                : contact.bodyB
+            if let bolt = boltBody.node {
+                damageBoss(with: bolt, at: contact.contactPoint)
+            }
+            return
+        }
+
+        let playerMask = PhysicsCategory.player
+        let otherBody: SKPhysicsBody
+        if contact.bodyA.categoryBitMask == playerMask {
+            otherBody = contact.bodyB
+        } else if contact.bodyB.categoryBitMask == playerMask {
+            otherBody = contact.bodyA
+        } else {
+            return
+        }
+
+        guard phase == .playing, let node = otherBody.node else { return }
+        switch otherBody.categoryBitMask {
+        case PhysicsCategory.chip:
+            collectChip(node)
+        case PhysicsCategory.powerUp:
+            collectPowerUp(node)
+        case PhysicsCategory.hazard:
+            hitHazard(node, at: contact.contactPoint)
+        case PhysicsCategory.boss:
+            hitHazard(node, at: contact.contactPoint)
+        default:
+            break
+        }
+    }
+
+    private func collectChip(_ chip: SKNode) {
+        guard chip.parent != nil else { return }
+        let position = chip.position
+        chip.removeFromParent()
+        runChips += 1
+        lifetimeChips += 1
+        scoreValue += 25
+        UserDefaults.standard.set(lifetimeChips, forKey: GameConstants.lifetimeChipsKey)
+
+        let dailyResult = ProgressStore.addDailyChip()
+        if dailyResult.completedNow {
+            scoreValue += 300
+            showToast(
+                "DAILY QUEST COMPLETE!  +300",
+                color: UIColor(red: 1, green: 0.84, blue: 0.18, alpha: 1),
+                duration: 2.2
+            )
+        }
+        if lifetimeChips >= 25 {
+            awardAchievement(.chipCollector)
+        }
+
+        makeBurst(
+            at: position,
+            colors: [UIColor(red: 1, green: 0.86, blue: 0.14, alpha: 1), .white],
+            count: 8
+        )
+        GameAudio.shared.play(.chip)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.45)
+    }
+
+    private func collectPowerUp(_ node: SKNode) {
+        guard
+            node.parent != nil,
+            let value = node.userData?["kind"] as? String,
+            let kind = PowerUpKind(rawValue: value)
+        else {
+            return
+        }
+
+        let position = node.position
+        node.removeFromParent()
+        scoreValue += 50
+
+        switch kind {
+        case .shield:
+            shieldTime = 8
+            player.childNode(withName: "shieldAura")?.isHidden = false
+            showToast("SHIELD BUBBLE!", color: WorldArt.glitchBlue, duration: 1.6)
+        case .magnet:
+            magnetTime = 9
+            player.childNode(withName: "magnetAura")?.isHidden = false
+            showToast("CHIP MAGNET!", color: UIColor(red: 1, green: 0.84, blue: 0.16, alpha: 1), duration: 1.6)
+        }
+
+        makeBurst(at: position, colors: [WorldArt.glitchBlue, .white], count: 13)
+        GameAudio.shared.play(.powerUp)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    private func hitHazard(_ hazard: SKNode, at point: CGPoint) {
+        guard invulnerabilityTime <= 0 else { return }
+
+        if demoMode {
+            if hazard.name != "boss" {
+                hazard.removeFromParent()
+            }
+            makeBurst(at: point, colors: [WorldArt.glitchPink, WorldArt.glitchBlue], count: 12)
+            return
+        }
+
+        if shieldTime > 0 {
+            shieldTime = 0
+            invulnerabilityTime = 1.1
+            if hazard.name != "boss" {
+                hazard.removeFromParent()
+            }
+            makeBurst(at: point, colors: [WorldArt.glitchBlue, .white], count: 18)
+            showToast("SHIELD SAVE!", color: WorldArt.glitchBlue, duration: 1.2)
+            GameAudio.shared.play(.shieldHit)
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        } else {
+            makeBurst(at: player.position, colors: [WorldArt.glitchPink, .white], count: 22)
+            endRun()
+        }
+    }
+
+    private func awardAchievement(_ achievement: Achievement) {
+        guard ProgressStore.unlock(achievement) else { return }
+        scoreValue += 100
+        showToast(
+            "NEW BADGE  •  \(achievement.title)",
+            color: UIColor(red: 1, green: 0.84, blue: 0.18, alpha: 1),
+            duration: 2.0
+        )
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    private func makeBurst(at point: CGPoint, colors: [UIColor], count: Int) {
+        for index in 0..<count {
+            let spark = SKShapeNode(circleOfRadius: CGFloat.random(in: 2.5...5.5))
+            spark.position = point
+            spark.fillColor = colors[index % colors.count]
+            spark.strokeColor = .clear
+            spark.zPosition = 45
+            gameplayLayer.addChild(spark)
+
+            let angle = CGFloat.random(in: 0...(2 * .pi))
+            let distance = CGFloat.random(in: 35...105)
+            spark.run(.sequence([
+                .group([
+                    .moveBy(x: cos(angle) * distance, y: sin(angle) * distance, duration: 0.42),
+                    .fadeOut(withDuration: 0.42),
+                    .scale(to: 0.1, duration: 0.42)
+                ]),
+                .removeFromParent()
+            ]))
+        }
+    }
+
+    // MARK: - Input
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        let point = touch.location(in: self)
+
+        switch phase {
+        case .title:
+            if gearButton.contains(point) {
+                showGearScreen()
+            } else {
+                showStoryPage(0)
+            }
+        case .story(let page):
+            if page < 2 {
+                showStoryPage(page + 1)
+            } else {
+                startRun()
+            }
+        case .gear:
+            if gearBackButton.contains(point) {
+                showTitleScreen()
+                return
+            }
+            for (style, frame) in gearCardFrames where frame.contains(point) {
+                guard lifetimeChips >= style.unlockCost else {
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    return
+                }
+                selectedBooster = style
+                ProgressStore.selectedBooster = style
+                WorldArt.applyBoosterStyle(style, to: player)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showGearScreen()
+                return
+            }
+        case .playing:
+            if pauseButton.contains(point) {
+                togglePause()
+            } else {
+                isBoosting = true
+                UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.5)
+            }
+        case .paused:
+            if pauseButton.contains(point) {
+                togglePause()
+            }
+        case .gameOver:
+            startRun()
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if phase == .playing, !demoMode {
+            isBoosting = false
+        }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if phase == .playing, !demoMode {
+            isBoosting = false
+        }
+    }
+
+    // MARK: - HUD and layout
+
+    private func buildHUD() {
+        scoreLabel.fontSize = 22
+        scoreLabel.fontColor = .white
+        scoreLabel.horizontalAlignmentMode = .left
+        scoreLabel.verticalAlignmentMode = .center
+        hudLayer.addChild(scoreLabel)
+
+        chipLabel.fontSize = 17
+        chipLabel.fontColor = UIColor(red: 1, green: 0.86, blue: 0.20, alpha: 1)
+        chipLabel.horizontalAlignmentMode = .left
+        chipLabel.verticalAlignmentMode = .center
+        hudLayer.addChild(chipLabel)
+
+        worldLabel.fontSize = 18
+        worldLabel.fontColor = .white
+        worldLabel.horizontalAlignmentMode = .center
+        worldLabel.verticalAlignmentMode = .center
+        hudLayer.addChild(worldLabel)
+
+        powerLabel.fontSize = 16
+        powerLabel.fontColor = .white
+        powerLabel.horizontalAlignmentMode = .center
+        powerLabel.verticalAlignmentMode = .center
+        hudLayer.addChild(powerLabel)
+
+        let path = CGPath(
+            roundedRect: CGRect(x: -28, y: -24, width: 56, height: 48),
+            cornerWidth: 13,
+            cornerHeight: 13,
+            transform: nil
+        )
+        pauseButton.path = path
+        pauseButton.fillColor = UIColor.black.withAlphaComponent(0.34)
+        pauseButton.strokeColor = .white
+        pauseButton.lineWidth = 2
+        pauseButton.zPosition = 80
+        for offset in [-6, 6] as [CGFloat] {
+            let bar = SKShapeNode(rectOf: CGSize(width: 5, height: 19), cornerRadius: 2)
+            bar.position.x = offset
+            bar.fillColor = .white
+            bar.strokeColor = .clear
+            pauseButton.addChild(bar)
+        }
+        hudLayer.addChild(pauseButton)
+    }
+
+    private func layoutScene() {
+        guard size.width > 0, size.height > 0 else { return }
+
+        scoreLabel.position = CGPoint(x: 28, y: size.height - 36)
+        chipLabel.position = CGPoint(x: 29, y: size.height - 67)
+        worldLabel.position = CGPoint(x: size.width / 2, y: size.height - 35)
+        powerLabel.position = CGPoint(x: size.width / 2, y: size.height - 64)
+        pauseButton.position = CGPoint(x: size.width - 48, y: size.height - 43)
+
+        if phase == .playing || phase == .paused {
+            player.position.x = size.width * 0.25
+            player.position.y = min(max(player.position.y, lowerFlightLimit), upperFlightLimit)
+        }
+    }
+
+    private func updateHUD() {
+        scoreLabel.text = "SCORE  \(String(format: "%04d", Int(scoreValue)))"
+        chipLabel.text = "★  \(runChips)"
+        worldLabel.text = currentWorld.name
+
+        if shieldTime > 0 {
+            powerLabel.text = "SHIELD  \(Int(ceil(shieldTime)))s"
+            powerLabel.fontColor = WorldArt.glitchBlue
+        } else if magnetTime > 0 {
+            powerLabel.text = "MAGNET  \(Int(ceil(magnetTime)))s"
+            powerLabel.fontColor = UIColor(red: 1, green: 0.86, blue: 0.20, alpha: 1)
+        } else {
+            powerLabel.text = ""
+        }
+    }
+
+    private func showToast(_ text: String, color: UIColor, duration: TimeInterval) {
+        hudLayer.childNode(withName: "toast")?.removeFromParent()
+
+        let toast = makePill(text: text, width: max(250, CGFloat(text.count) * 12), color: color)
+        toast.name = "toast"
+        toast.position = CGPoint(x: size.width / 2, y: size.height * 0.82)
+        toast.zPosition = 95
+        toast.alpha = 0
+        toast.setScale(0.85)
+        hudLayer.addChild(toast)
+        toast.run(.sequence([
+            .group([.fadeIn(withDuration: 0.18), .scale(to: 1, duration: 0.18)]),
+            .wait(forDuration: duration),
+            .group([.fadeOut(withDuration: 0.3), .moveBy(x: 0, y: 18, duration: 0.3)]),
+            .removeFromParent()
+        ]))
+    }
+
+    private func makeLabel(_ text: String, size: CGFloat, color: UIColor) -> SKLabelNode {
+        let label = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+        label.text = text
+        label.fontSize = size
+        label.fontColor = color
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        return label
+    }
+
+    private func makeMultilineLabel(
+        _ text: String,
+        size: CGFloat,
+        color: UIColor,
+        width: CGFloat
+    ) -> SKLabelNode {
+        let label = SKLabelNode(fontNamed: "AvenirNext-Medium")
+        label.text = text
+        label.fontSize = size
+        label.fontColor = color
+        label.numberOfLines = 0
+        label.preferredMaxLayoutWidth = width
+        label.lineBreakMode = .byWordWrapping
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        return label
+    }
+
+    private func makePill(text: String, width: CGFloat, color: UIColor) -> SKNode {
+        let root = SKNode()
+        let background = SKShapeNode(rectOf: CGSize(width: width, height: 58), cornerRadius: 22)
+        background.fillColor = UIColor(red: 0.06, green: 0.04, blue: 0.16, alpha: 0.96)
+        background.strokeColor = color
+        background.lineWidth = 4
+        root.addChild(background)
+
+        let label = makeLabel(text, size: 18, color: .white)
+        background.addChild(label)
+        return root
+    }
+
+    private func configureButton(
+        _ button: SKShapeNode,
+        text: String,
+        width: CGFloat,
+        color: UIColor
+    ) {
+        button.removeAllChildren()
+        button.path = CGPath(
+            roundedRect: CGRect(x: -width / 2, y: -29, width: width, height: 58),
+            cornerWidth: 22,
+            cornerHeight: 22,
+            transform: nil
+        )
+        button.fillColor = UIColor(red: 0.06, green: 0.04, blue: 0.16, alpha: 0.96)
+        button.strokeColor = color
+        button.lineWidth = 4
+
+        let label = makeLabel(text, size: 17, color: .white)
+        button.addChild(label)
+    }
+}
