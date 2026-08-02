@@ -8,16 +8,17 @@ A native iPad arcade-flight game built with Swift and SpriteKit.
 - Release to fall.
 - Follow a three-part story about Aidan, his booster, and The Glitch.
 - Fly through Cloud Kingdom, Dino Jungle, Candy Canyon, and Storybook Castle.
-- Dodge themed gates, falling hazards, and invading Glitch creatures.
+- Outsmart four world-specific enemies: Cloud Swooper, Jungle Snapper, Candy Bouncer, and Castle Gargoyle.
 - Gather Spark Chips and collect shield-bubble and chip-magnet power-ups.
-- See animated boost/glide poses, booster trails, pickup reactions, lively enemies, and dedicated defeat and boss-victory sequences.
+- Earn a score bonus for skillful near misses, with dedicated visual, sound, and haptic feedback.
+- See animated boost/glide poses, physically aligned world-space booster exhaust, pickup reactions, lively enemies, and dedicated defeat and boss-victory sequences.
 - Defeat The Glitch in a booster-blast boss battle after completing all four worlds.
 - Permanently unlock and equip four richly illustrated booster styles with saved Spark Chips.
 - Complete a daily chip quest and earn five persistent adventure badges.
 - Chase a persistent high score, pause at any time, and restart instantly.
 - Hear distinct title, world, and boss music plus layered action sounds, with a persistent mute control and pickup/collision haptics.
 
-The four playable worlds are drawn natively in SpriteKit. Original illustrated key art and an app icon give the game a polished identity while keeping gameplay lightweight and responsive.
+The four playable worlds are rendered with SpriteKit using original illustrated assets. Original key art and an app icon give the game a polished identity while keeping gameplay lightweight and responsive.
 
 ## Play on the Mac first
 

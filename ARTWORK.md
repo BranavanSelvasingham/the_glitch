@@ -379,3 +379,75 @@ Scene/backdrop: perfectly flat solid #00ff00 chroma-key background for backgroun
 Color palette: royal purple, gold, sapphire blue, silver; do not use green anywhere on the object
 Background constraints: one uniform #00ff00 color with no shadows, gradients, texture, reflections, floor plane, or lighting variation; crisp separated edges
 ```
+
+## World-specific enemy sprites
+
+Final files:
+
+- `AidanGameRush/Assets.xcassets/CloudSwooperEnemy.imageset/CloudSwooperEnemy.png`
+- `AidanGameRush/Assets.xcassets/JungleSnapperEnemy.imageset/JungleSnapperEnemy.png`
+- `AidanGameRush/Assets.xcassets/CandyBouncerEnemy.imageset/CandyBouncerEnemy.png`
+- `AidanGameRush/Assets.xcassets/CastleGargoyleEnemy.imageset/CastleGargoyleEnemy.png`
+
+Original generated files, in world order above:
+
+- `/Users/branavan/.codex/generated_images/019fbd77-a43b-7651-81d0-6462c5d04bd8/exec-a51a3a59-824f-4f87-8ced-3f208edae87f.png`
+- `/Users/branavan/.codex/generated_images/019fbd77-a43b-7651-81d0-6462c5d04bd8/exec-6ed836ae-e966-4b76-8ae8-d42e4cfa1504.png`
+- `/Users/branavan/.codex/generated_images/019fbd77-a43b-7651-81d0-6462c5d04bd8/exec-5e338aaa-cb63-42ce-bea0-70680781ad93.png`
+- `/Users/branavan/.codex/generated_images/019fbd77-a43b-7651-81d0-6462c5d04bd8/exec-56472432-4b5f-45f7-8ac5-b36891a742c3.png`
+
+Generation method: four separate built-in `image_gen` calls using existing
+game art solely as rendering-quality and identity references. Cloud Swooper,
+Candy Bouncer, and Castle Gargoyle used flat green backgrounds; Jungle Snapper
+used flat magenta to preserve its green body. Backgrounds were removed with the
+bundled `remove_chroma_key.py` helper, then the clean alpha sprites were resized
+to 512 × 512.
+
+Shared exact prompt:
+
+```text
+Use case: stylized-concept
+Asset type: production enemy sprite for a kid-friendly side-scrolling iPad flight game
+Input images: Image 1 is the game's premium 3D-cartoon world/style reference; Image 2 is The Glitch identity reference. Use them only for rendering quality, friendly proportions, lighting, and the restrained charcoal/magenta/cyan corruption language.
+Primary request: Create exactly one complete world-specific bug-beast enemy, with no scenery and no character attached
+Style/medium: polished high-end 3D animated-family-adventure mobile-game asset, rounded toy-like forms, tactile natural/fantasy materials, mischievous and challenging but never scary
+Composition/framing: single creature in clean three-quarter side view traveling toward the left, centered on a square canvas, full body visible, generous padding, readable silhouette at 85 pixels tall
+Lighting/mood: bright warm upper-right adventure lighting, playful action energy
+Constraints: exactly one creature; clear eyes and face; compact collision-friendly body; no ground, cast shadow, contact shadow, reflection, watermark, logo, letters, numbers, text, UI, weapon, robot parts, circuit boards, pixels, screens, neon grid, gore, horror, or extra creature. Any Glitch corruption is limited to a few small charcoal, cyan, and/or magenta seams or shards.
+```
+
+### Cloud Swooper addition
+
+```text
+Subject: CLOUD SWOOPER — a broad winged creature shaped like a friendly storm-cloud manta bird, with soft slate-blue cloud-puff wings swept upward, a compact charcoal center body, one small polished gold wind-spiral crest, cyan and magenta edge seams, and a cheeky focused expression; its wide horizontal silhouette must clearly suggest a fast swooping dive
+Scene/backdrop: perfectly flat solid #00ff00 chroma-key background for background removal
+Color palette: slate blue, cloud white, charcoal, cyan, magenta, warm gold; do not use green anywhere on the creature
+Background constraints: one uniform #00ff00 color with no shadows, gradients, texture, floor plane, reflections, or lighting variation; crisp separated edges
+```
+
+### Jungle Snapper addition
+
+```text
+Subject: JUNGLE SNAPPER — an agile leaf-lizard bug-beast with a compact charcoal and deep-emerald body, a long curled vine tail, two broad lime leaf fins, tiny amber fossil markings, warm gold claws, cyan corruption seams, and a cheeky focused expression; its long forward-and-back silhouette must clearly suggest locking on and lunging straight
+Scene/backdrop: perfectly flat solid #ff00ff chroma-key background for background removal
+Color palette: emerald, lime, charcoal, cyan, amber, warm gold; do not use magenta, pink, or purple anywhere on the creature
+Background constraints: one uniform #ff00ff color with no shadows, gradients, texture, floor plane, reflections, or lighting variation; crisp separated edges
+```
+
+### Candy Bouncer addition
+
+```text
+Subject: CANDY BOUNCER — a round springy gumdrop bug-beast with a raspberry-pink glossy body, cream and cyan candy bands, two short grape-purple antennae, a curled licorice-black ribbon tail underneath, tiny charcoal/magenta/cyan corruption cracks, and a cheeky delighted expression; its round silhouette and coiled tail must clearly suggest rhythmic bouncing
+Scene/backdrop: perfectly flat solid #00ff00 chroma-key background for background removal
+Color palette: raspberry pink, cream, cyan, grape purple, charcoal, small gold highlights; do not use green anywhere on the creature
+Background constraints: one uniform #00ff00 color with no shadows, gradients, texture, floor plane, reflections, or lighting variation; crisp separated edges
+```
+
+### Castle Gargoyle addition
+
+```text
+Subject: CASTLE GARGOYLE — a compact winged storybook gargoyle guard with rounded purple-gray stone armor, small folded bat-like wings extended for flight, polished gold crown-shaped brow trim, one sapphire chest gem, tiny charcoal/magenta/cyan corruption seams, and a stubborn but funny expression; its angular zigzag silhouette must clearly suggest guarded weaving motion
+Scene/backdrop: perfectly flat solid #00ff00 chroma-key background for background removal
+Color palette: purple-gray stone, royal purple, gold, sapphire blue, charcoal, restrained cyan and magenta; do not use green anywhere on the creature
+Background constraints: one uniform #00ff00 color with no shadows, gradients, texture, floor plane, reflections, or lighting variation; crisp separated edges
+```

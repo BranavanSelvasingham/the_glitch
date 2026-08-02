@@ -43,6 +43,15 @@ enum WorldTheme: Int, CaseIterable {
         }
     }
 
+    var enemyKind: EnemyKind {
+        switch self {
+        case .cloudKingdom: .cloudSwooper
+        case .dinoJungle: .jungleSnapper
+        case .candyCanyon: .candyBouncer
+        case .storybookCastle: .castleGargoyle
+        }
+    }
+
     var name: String {
         switch self {
         case .cloudKingdom: "CLOUD KINGDOM"
@@ -115,6 +124,31 @@ enum WorldTheme: Int, CaseIterable {
         case .dinoJungle: UIColor(red: 0.08, green: 0.28, blue: 0.14, alpha: 1)
         case .candyCanyon: UIColor(red: 1, green: 0.32, blue: 0.52, alpha: 1)
         case .storybookCastle: UIColor(red: 0.85, green: 0.68, blue: 1, alpha: 1)
+        }
+    }
+}
+
+enum EnemyKind: String, CaseIterable {
+    case cloudSwooper
+    case jungleSnapper
+    case candyBouncer
+    case castleGargoyle
+
+    var assetName: String {
+        switch self {
+        case .cloudSwooper: "CloudSwooperEnemy"
+        case .jungleSnapper: "JungleSnapperEnemy"
+        case .candyBouncer: "CandyBouncerEnemy"
+        case .castleGargoyle: "CastleGargoyleEnemy"
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .cloudSwooper: "CLOUD SWOOPER"
+        case .jungleSnapper: "JUNGLE SNAPPER"
+        case .candyBouncer: "CANDY BOUNCER"
+        case .castleGargoyle: "CASTLE GARGOYLE"
         }
     }
 }

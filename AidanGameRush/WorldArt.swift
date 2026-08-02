@@ -7,6 +7,28 @@ enum WorldArt {
     static let glitchBlue = UIColor(red: 0.10, green: 0.92, blue: 1, alpha: 1)
     static let ink = UIColor(red: 0.035, green: 0.025, blue: 0.09, alpha: 1)
 
+    private static func softParticleTexture() -> SKTexture {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24))
+        let image = renderer.image { context in
+            let colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0).cgColor]
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            guard let gradient = CGGradient(
+                colorsSpace: colorSpace,
+                colors: colors as CFArray,
+                locations: [0, 1]
+            ) else { return }
+            context.cgContext.drawRadialGradient(
+                gradient,
+                startCenter: CGPoint(x: 12, y: 12),
+                startRadius: 0,
+                endCenter: CGPoint(x: 12, y: 12),
+                endRadius: 12,
+                options: []
+            )
+        }
+        return SKTexture(image: image)
+    }
+
     static func makeBackdrop(for theme: WorldTheme, size: CGSize) -> SKNode {
         let root = SKNode()
 
@@ -48,10 +70,38 @@ enum WorldArt {
     static func makePlayer() -> SKNode {
         let player = SKNode()
 
+        // One physical anchor drives every exhaust effect. It sits on the rear
+        // nozzle already painted into AidanFlying instead of drawing a second pack.
+        let nozzle = SKNode()
+        nozzle.name = "boosterNozzle"
+        nozzle.position = CGPoint(x: -41, y: 6)
+        nozzle.zRotation = 0.31
+        nozzle.zPosition = 0.5
+
+        let nozzleRim = SKShapeNode(ellipseOf: CGSize(width: 14, height: 10))
+        nozzleRim.name = "nozzleRim"
+        nozzleRim.fillColor = ink
+        nozzleRim.strokeColor = glitchBlue
+        nozzleRim.lineWidth = 2
+        nozzleRim.glowWidth = 2
+        nozzle.addChild(nozzleRim)
+
+        let exhaust = SKNode()
+        exhaust.name = "boosterExhaust"
+        exhaust.zPosition = -3
+
         let flamePath = CGMutablePath()
-        flamePath.move(to: CGPoint(x: -98, y: 12))
-        flamePath.addLine(to: CGPoint(x: -50, y: 27))
-        flamePath.addLine(to: CGPoint(x: -54, y: 1))
+        flamePath.move(to: CGPoint(x: -2, y: 0))
+        flamePath.addCurve(
+            to: CGPoint(x: -57, y: 0),
+            control1: CGPoint(x: -17, y: 13),
+            control2: CGPoint(x: -42, y: 10)
+        )
+        flamePath.addCurve(
+            to: CGPoint(x: -2, y: 0),
+            control1: CGPoint(x: -43, y: -10),
+            control2: CGPoint(x: -16, y: -12)
+        )
         flamePath.closeSubpath()
         let flame = SKShapeNode(path: flamePath)
         flame.name = "flame"
@@ -59,30 +109,54 @@ enum WorldArt {
         flame.strokeColor = UIColor(red: 1, green: 0.28, blue: 0.12, alpha: 1)
         flame.lineWidth = 3
         flame.glowWidth = 5
-        flame.zPosition = -3
+        flame.zPosition = -2
 
-        let flameCore = SKShapeNode(path: flamePath)
-        flameCore.setScale(0.58)
-        flameCore.position = CGPoint(x: -22, y: 5)
+        let corePath = CGMutablePath()
+        corePath.move(to: CGPoint(x: -1, y: 0))
+        corePath.addCurve(
+            to: CGPoint(x: -34, y: 0),
+            control1: CGPoint(x: -12, y: 6),
+            control2: CGPoint(x: -26, y: 5)
+        )
+        corePath.addCurve(
+            to: CGPoint(x: -1, y: 0),
+            control1: CGPoint(x: -25, y: -5),
+            control2: CGPoint(x: -11, y: -6)
+        )
+        corePath.closeSubpath()
+        let flameCore = SKShapeNode(path: corePath)
         flameCore.fillColor = .white
         flameCore.strokeColor = glitchBlue
         flameCore.lineWidth = 2
         flameCore.glowWidth = 3
         flame.addChild(flameCore)
-        player.addChild(flame)
+        exhaust.addChild(flame)
 
-        let booster = shape(
-            rect: CGSize(width: 24, height: 46),
-            radius: 10,
-            fill: UIColor(red: 0.42, green: 0.20, blue: 0.84, alpha: 1),
-            stroke: glitchBlue
-        )
-        booster.name = "boosterPack"
-        booster.position = CGPoint(x: -51, y: 18)
-        booster.zRotation = -0.22
-        booster.zPosition = -1
-        booster.lineWidth = 3
-        player.addChild(booster)
+        let particles = SKEmitterNode()
+        particles.name = "exhaustParticles"
+        particles.particleTexture = softParticleTexture()
+        particles.particleBirthRate = 0
+        particles.particleLifetime = 0.34
+        particles.particleLifetimeRange = 0.12
+        particles.particlePositionRange = CGVector(dx: 4, dy: 7)
+        particles.emissionAngle = .pi
+        particles.emissionAngleRange = 0.22
+        particles.particleSpeed = 195
+        particles.particleSpeedRange = 75
+        particles.particleAlpha = 0.9
+        particles.particleAlphaRange = 0.1
+        particles.particleAlphaSpeed = -2.4
+        particles.particleScale = 0.22
+        particles.particleScaleRange = 0.11
+        particles.particleScaleSpeed = -0.36
+        particles.particleColor = glitchBlue
+        particles.particleColorBlendFactor = 1
+        particles.particleBlendMode = .add
+        particles.particleZPosition = -1
+        exhaust.addChild(particles)
+
+        nozzle.addChild(exhaust)
+        player.addChild(nozzle)
 
         let character = SKSpriteNode(imageNamed: "AidanFlying")
         character.name = "characterArt"
@@ -124,12 +198,15 @@ enum WorldArt {
     }
 
     static func applyBoosterStyle(_ style: BoosterStyle, to player: SKNode) {
-        if let booster = player.childNode(withName: "boosterPack") as? SKShapeNode {
-            booster.fillColor = style.bodyColor
-            booster.strokeColor = style.trailColor
+        if let rim = player.childNode(withName: "//nozzleRim") as? SKShapeNode {
+            rim.fillColor = style.bodyColor
+            rim.strokeColor = style.trailColor
         }
-        if let flame = player.childNode(withName: "flame") as? SKShapeNode {
+        if let flame = player.childNode(withName: "//flame") as? SKShapeNode {
             flame.strokeColor = style.trailColor
+        }
+        if let particles = player.childNode(withName: "//exhaustParticles") as? SKEmitterNode {
+            particles.particleColor = style.trailColor
         }
     }
 
@@ -208,6 +285,67 @@ enum WorldArt {
         ])))
 
         root.physicsBody = SKPhysicsBody(circleOfRadius: 42)
+        root.physicsBody?.isDynamic = false
+        root.physicsBody?.categoryBitMask = PhysicsCategory.hazard
+        root.physicsBody?.contactTestBitMask = PhysicsCategory.player
+        root.physicsBody?.collisionBitMask = 0
+        return root
+    }
+
+    static func makeEnemy(_ kind: EnemyKind) -> SKNode {
+        let root = SKNode()
+        root.name = "hazard"
+        root.userData = [
+            "enemyKind": kind.rawValue,
+            "nearMissChecked": false
+        ]
+
+        let art = SKSpriteNode(imageNamed: kind.assetName)
+        art.name = "enemyArt"
+        let radius: CGFloat
+        switch kind {
+        case .cloudSwooper:
+            art.size = CGSize(width: 164, height: 92)
+            radius = 36
+        case .jungleSnapper:
+            art.size = CGSize(width: 140, height: 100)
+            radius = 36
+        case .candyBouncer:
+            art.size = CGSize(width: 108, height: 108)
+            radius = 38
+        case .castleGargoyle:
+            art.size = CGSize(width: 132, height: 104)
+            radius = 38
+        }
+        root.userData?["collisionRadius"] = radius
+        root.addChild(art)
+
+        let breathing: SKAction
+        switch kind {
+        case .cloudSwooper:
+            breathing = .sequence([
+                .group([.scaleX(to: 1.05, duration: 0.28), .scaleY(to: 0.95, duration: 0.28)]),
+                .group([.scaleX(to: 0.97, duration: 0.24), .scaleY(to: 1.04, duration: 0.24)])
+            ])
+        case .jungleSnapper:
+            breathing = .sequence([
+                .rotate(toAngle: 0.045, duration: 0.20, shortestUnitArc: true),
+                .rotate(toAngle: -0.035, duration: 0.20, shortestUnitArc: true)
+            ])
+        case .candyBouncer:
+            breathing = .sequence([
+                .group([.scaleX(to: 1.06, duration: 0.18), .scaleY(to: 0.94, duration: 0.18)]),
+                .group([.scaleX(to: 0.95, duration: 0.20), .scaleY(to: 1.07, duration: 0.20)])
+            ])
+        case .castleGargoyle:
+            breathing = .sequence([
+                .rotate(toAngle: 0.04, duration: 0.24, shortestUnitArc: true),
+                .rotate(toAngle: -0.04, duration: 0.24, shortestUnitArc: true)
+            ])
+        }
+        art.run(.repeatForever(breathing))
+
+        root.physicsBody = SKPhysicsBody(circleOfRadius: radius)
         root.physicsBody?.isDynamic = false
         root.physicsBody?.categoryBitMask = PhysicsCategory.hazard
         root.physicsBody?.contactTestBitMask = PhysicsCategory.player

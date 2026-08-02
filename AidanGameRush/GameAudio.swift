@@ -10,6 +10,7 @@ final class GameAudio {
         case crash
         case worldChange
         case button
+        case nearMiss
 
         var notes: [(frequency: Double, duration: Double)] {
             switch self {
@@ -20,6 +21,7 @@ final class GameAudio {
             case .crash: [(150, 0.13), (112, 0.18), (82, 0.25)]
             case .worldChange: [(523, 0.08), (659, 0.08), (784, 0.13), (1_047, 0.18)]
             case .button: [(620, 0.045), (780, 0.055)]
+            case .nearMiss: [(520, 0.045), (760, 0.055), (1_020, 0.08)]
             }
         }
     }

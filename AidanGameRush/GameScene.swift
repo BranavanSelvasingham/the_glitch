@@ -52,6 +52,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private var heroShotTimer: TimeInterval = 0
     private var bossNode: SKNode?
     private var boostTrailTimer: TimeInterval = 0
+    private var hazardSeparationTimer: TimeInterval = 0
+    private var nearMissStreak = 0
     private var gameOverReady = false
 
     private var isBoosting = false
@@ -61,6 +63,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let bossPreviewMode = ProcessInfo.processInfo.arguments.contains("--boss-preview")
     private let crashPreviewMode = ProcessInfo.processInfo.arguments.contains("--crash-preview")
     private let pausePreviewMode = ProcessInfo.processInfo.arguments.contains("--pause-preview")
+    private let enemyShowcaseMode = ProcessInfo.processInfo.arguments.contains("--enemy-showcase")
+    private let nearMissShowcaseMode = ProcessInfo.processInfo.arguments.contains("--near-miss-showcase")
     private let persistenceDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
         "--persistence-self-test"
     )
@@ -118,6 +122,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         addChild(screenOverlay)
 
         gameplayLayer.addChild(player)
+        configurePlayerDynamics()
         WorldArt.applyBoosterStyle(selectedBooster, to: player)
         buildHUD()
         setWorld(.cloudKingdom, announce: false)
@@ -734,6 +739,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
         gameplayLayer.removeAllChildren()
         gameplayLayer.addChild(player)
+        configurePlayerDynamics()
         player.position = CGPoint(x: size.width * 0.25, y: size.height * 0.56)
         player.zRotation = 0
         player.setScale(1)
@@ -741,7 +747,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         player.physicsBody?.categoryBitMask = PhysicsCategory.player
         player.childNode(withName: "shieldAura")?.isHidden = true
         player.childNode(withName: "magnetAura")?.isHidden = true
-        player.childNode(withName: "flame")?.isHidden = true
+        player.childNode(withName: "//flame")?.isHidden = true
+        (player.childNode(withName: "//exhaustParticles") as? SKEmitterNode)?.particleBirthRate = 0
         WorldArt.applyBoosterStyle(selectedBooster, to: player)
 
         let startingWorld = demoMode ? requestedDemoWorld : 0
@@ -750,23 +757,26 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         scoreValue = 0
         runChips = 0
         worldStage = startingWorld
-        obstacleTimer = GameConstants.initialObstacleDelay
-        enemyTimer = 4.2
-        fallingHazardTimer = 6.3
-        powerUpTimer = GameConstants.initialPowerUpDelay
-        shieldTime = demoMode ? 999 : 0
-        magnetTime = demoMode ? 999 : 0
+        let isolatesEnemyFeedback = enemyShowcaseMode || nearMissShowcaseMode
+        obstacleTimer = isolatesEnemyFeedback ? 999 : GameConstants.initialObstacleDelay
+        enemyTimer = nearMissShowcaseMode ? 999 : (enemyShowcaseMode ? 0.45 : 4.2)
+        fallingHazardTimer = isolatesEnemyFeedback ? 999 : 6.3
+        powerUpTimer = isolatesEnemyFeedback ? 999 : GameConstants.initialPowerUpDelay
+        shieldTime = demoMode && !isolatesEnemyFeedback ? 999 : 0
+        magnetTime = demoMode && !isolatesEnemyFeedback ? 999 : 0
         invulnerabilityTime = 1.4
         bossFightActive = false
         bossHealth = 0
         bossNode = nil
         boostTrailTimer = 0
+        hazardSeparationTimer = 0
+        nearMissStreak = 0
         gameOverReady = false
         hudLayer.childNode(withName: "bossBar")?.removeFromParent()
         isBoosting = false
         lastUpdateTime = 0
 
-        setWorld(WorldTheme.allCases[startingWorld], announce: true)
+        setWorld(WorldTheme.allCases[startingWorld], announce: !isolatesEnemyFeedback)
         GameAudio.shared.playMusic(currentWorld.musicTheme)
         updateHUD()
         showToast("HOLD TO BOOST  •  RELEASE TO GLIDE", color: .white, duration: 3.2)
@@ -780,6 +790,13 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             .fadeIn(withDuration: 0.28),
             .scale(to: 1, duration: 0.34)
         ]))
+
+        if nearMissShowcaseMode {
+            run(.sequence([
+                .wait(forDuration: 0.85),
+                .run { [weak self] in self?.spawnNearMissShowcaseEnemy() }
+            ]), withKey: "nearMissShowcase")
+        }
 
         #if DEBUG
         if gameplayQualityDiagnosticMode, qualityProbeStartTime == nil {
@@ -811,7 +828,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         phase = .gameOver
         gameOverReady = false
         isBoosting = false
-        player.childNode(withName: "flame")?.isHidden = true
+        player.childNode(withName: "//flame")?.isHidden = true
+        (player.childNode(withName: "//exhaustParticles") as? SKEmitterNode)?.particleBirthRate = 0
         player.physicsBody?.categoryBitMask = 0
         player.removeAllActions()
         gameplayLayer.isPaused = false
@@ -927,6 +945,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
         gameplayLayer.removeAllChildren()
         gameplayLayer.addChild(player)
+        configurePlayerDynamics()
         obstacleTimer = 2.1
         enemyTimer = 4.0
         fallingHazardTimer = 6.0
@@ -959,6 +978,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
         gameplayLayer.removeAllChildren()
         gameplayLayer.addChild(player)
+        configurePlayerDynamics()
 
         let boss = WorldArt.makeGlitchBoss()
         boss.position = CGPoint(x: size.width + 180, y: size.height * 0.56)
@@ -1233,24 +1253,166 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         }
     }
 
-    private func spawnGlitchEnemy() {
-        let enemy = WorldArt.makeGlitchEnemy()
-        enemy.position = CGPoint(
-            x: size.width + 110,
-            y: CGFloat.random(in: (lowerFlightLimit + 65)...(upperFlightLimit - 65))
-        )
+    private func spawnWorldEnemy() {
+        let kind = currentWorld.enemyKind
+        let enemy = WorldArt.makeEnemy(kind)
+        let safeBottom = lowerFlightLimit + 78
+        let safeTop = upperFlightLimit - 78
+        let centerY = (safeBottom + safeTop) / 2
 
-        let movement = SKAction.moveBy(
-            x: -(size.width + 260),
-            y: CGFloat.random(in: -90...90),
-            duration: TimeInterval((size.width + 260) / (currentScrollSpeed * 1.08))
-        )
-        enemy.run(.sequence([movement, .removeFromParent()]))
-        enemy.children.first?.run(.repeatForever(.sequence([
-            .moveBy(x: 0, y: 28, duration: 0.48),
-            .moveBy(x: 0, y: -28, duration: 0.48)
-        ])))
+        let startY: CGFloat
+        switch kind {
+        case .cloudSwooper:
+            startY = CGFloat.random(in: centerY...safeTop)
+        case .jungleSnapper:
+            startY = min(max(player.position.y, safeBottom), safeTop)
+        case .candyBouncer, .castleGargoyle:
+            let movementPadding: CGFloat = 72
+            startY = CGFloat.random(
+                in: (safeBottom + movementPadding)...(safeTop - movementPadding)
+            )
+        }
+
+        let holdingX = size.width - 84
+        enemy.position = CGPoint(x: size.width + 110, y: startY)
+        enemy.zPosition = 12
         gameplayLayer.addChild(enemy)
+        addEnemyTelegraph(to: enemy, kind: kind)
+
+        let warningDuration: TimeInterval = 0.72
+        let distance = holdingX + 210
+        let travelDuration = TimeInterval(distance / (currentScrollSpeed * enemySpeedMultiplier(for: kind)))
+        let movement = enemyMovement(
+            for: kind,
+            distance: distance,
+            duration: travelDuration,
+            startY: startY,
+            safeBottom: safeBottom,
+            safeTop: safeTop
+        )
+        let enter = SKAction.moveTo(x: holdingX, duration: 0.22)
+        enter.timingMode = .easeOut
+        enemy.run(.sequence([
+            enter,
+            .wait(forDuration: warningDuration),
+            .run { [weak enemy] in enemy?.childNode(withName: "enemyWarning")?.removeFromParent() },
+            movement,
+            .removeFromParent()
+        ]))
+
+        if enemyShowcaseMode {
+            showToast("\(kind.displayName)  •  WATCH ITS MOVE", color: currentWorld.accentColor, duration: 1.8)
+        }
+    }
+
+    private func enemySpeedMultiplier(for kind: EnemyKind) -> CGFloat {
+        switch kind {
+        case .cloudSwooper: 1.18
+        case .jungleSnapper: 1.34
+        case .candyBouncer: 1.04
+        case .castleGargoyle: 1.12
+        }
+    }
+
+    private func enemyMovement(
+        for kind: EnemyKind,
+        distance: CGFloat,
+        duration: TimeInterval,
+        startY: CGFloat,
+        safeBottom: CGFloat,
+        safeTop: CGFloat
+    ) -> SKAction {
+        switch kind {
+        case .cloudSwooper:
+            let dive = min(155, startY - safeBottom)
+            return .sequence([
+                .group([
+                    .moveBy(x: -distance * 0.48, y: -dive, duration: duration * 0.48),
+                    .rotate(toAngle: -0.16, duration: duration * 0.18, shortestUnitArc: true)
+                ]),
+                .group([
+                    .moveBy(x: -distance * 0.52, y: dive * 0.72, duration: duration * 0.52),
+                    .rotate(toAngle: 0.10, duration: duration * 0.18, shortestUnitArc: true)
+                ])
+            ])
+        case .jungleSnapper:
+            let lunge = SKAction.moveBy(x: -distance, y: 0, duration: duration)
+            lunge.timingMode = .easeIn
+            return lunge
+        case .candyBouncer:
+            let step = distance / 6
+            return .sequence((0..<6).map { index in
+                let y: CGFloat = index.isMultiple(of: 2) ? 62 : -62
+                let hop = SKAction.moveBy(x: -step, y: y, duration: duration / 6)
+                hop.timingMode = index.isMultiple(of: 2) ? .easeOut : .easeIn
+                return hop
+            })
+        case .castleGargoyle:
+            let step = distance / 4
+            let availableUp = safeTop - startY
+            let availableDown = startY - safeBottom
+            let amplitude = min(78, availableUp, availableDown)
+            return .sequence((0..<4).map { index in
+                let y: CGFloat = index.isMultiple(of: 2) ? amplitude : -amplitude
+                return .group([
+                    .moveBy(x: -step, y: y, duration: duration / 4),
+                    .rotate(toAngle: index.isMultiple(of: 2) ? 0.11 : -0.11, duration: duration / 4, shortestUnitArc: true)
+                ])
+            })
+        }
+    }
+
+    private func addEnemyTelegraph(to enemy: SKNode, kind: EnemyKind) {
+        let warning = SKNode()
+        warning.name = "enemyWarning"
+
+        let ring = SKShapeNode(ellipseOf: CGSize(width: 126, height: 126))
+        ring.strokeColor = currentWorld.accentColor
+        ring.fillColor = currentWorld.accentColor.withAlphaComponent(0.08)
+        ring.lineWidth = 5
+        ring.glowWidth = 5
+        ring.alpha = 0.95
+        warning.addChild(ring)
+        ring.run(.repeatForever(.sequence([
+            .group([.scale(to: 1.18, duration: 0.22), .fadeAlpha(to: 0.42, duration: 0.22)]),
+            .group([.scale(to: 0.86, duration: 0.20), .fadeAlpha(to: 0.95, duration: 0.20)])
+        ])))
+
+        let mark = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+        mark.text = "!"
+        mark.fontSize = 34
+        mark.fontColor = .white
+        mark.position = CGPoint(x: 0, y: 72)
+        mark.verticalAlignmentMode = .center
+        warning.addChild(mark)
+
+        if kind == .jungleSnapper {
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: -size.width, y: 0))
+            path.addLine(to: CGPoint(x: -72, y: 0))
+            let aimLine = SKShapeNode(path: path)
+            aimLine.strokeColor = currentWorld.accentColor.withAlphaComponent(0.55)
+            aimLine.lineWidth = 3
+            aimLine.glowWidth = 2
+            warning.addChild(aimLine)
+        }
+        enemy.addChild(warning)
+    }
+
+    private func spawnNearMissShowcaseEnemy() {
+        guard phase == .playing else { return }
+        let enemy = WorldArt.makeEnemy(.jungleSnapper)
+        enemy.position = CGPoint(x: size.width - 84, y: player.position.y + 96)
+        enemy.zPosition = 12
+        gameplayLayer.addChild(enemy)
+        addEnemyTelegraph(to: enemy, kind: .jungleSnapper)
+
+        enemy.run(.sequence([
+            .wait(forDuration: 0.72),
+            .run { [weak enemy] in enemy?.childNode(withName: "enemyWarning")?.removeFromParent() },
+            .moveBy(x: -(size.width + 180), y: 0, duration: 2.1),
+            .removeFromParent()
+        ]))
     }
 
     private func spawnFallingHazard() {
@@ -1330,7 +1492,11 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         runTime += deltaTime
         scoreValue += CGFloat(deltaTime) * (10 + min(10, CGFloat(runTime) * 0.05))
 
-        if demoMode {
+        if nearMissShowcaseMode {
+            player.position.y = size.height * 0.50
+            verticalVelocity = 0
+            isBoosting = false
+        } else if demoMode {
             let target = size.height * (0.53 + sin(currentTime * 0.9) * 0.16)
             isBoosting = player.position.y < target
         }
@@ -1341,6 +1507,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             updateBossFight(deltaTime: deltaTime)
         } else {
             updateSpawners(deltaTime: deltaTime)
+            updateNearMisses()
             advanceWorldIfNeeded()
         }
         updatePowerUps(deltaTime: deltaTime)
@@ -1640,16 +1807,23 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             character.yScale += (targetYScale - character.yScale) * blend
             character.position.y = 2 + CGFloat(sin(currentTime * 5.4)) * 1.8
         }
-        if let booster = player.childNode(withName: "boosterPack") {
+        if let booster = player.childNode(withName: "//nozzleRim") {
             let pulse = isBoosting ? 1 + CGFloat(sin(currentTime * 20)) * 0.06 : 1
             booster.setScale(pulse)
         }
-        if let flame = player.childNode(withName: "flame") {
+        let thrustIntensity = isBoosting
+            ? 0.88 + min(0.24, max(0, -verticalVelocity) / 1_800)
+            : 0
+        if let flame = player.childNode(withName: "//flame") {
             flame.isHidden = !isBoosting
             if isBoosting {
-                flame.yScale = 0.84 + CGFloat(sin(currentTime * 23)) * 0.15
-                flame.xScale = 0.94 + CGFloat(cos(currentTime * 17)) * 0.08
+                flame.yScale = thrustIntensity * (0.88 + CGFloat(sin(currentTime * 23)) * 0.12)
+                flame.xScale = thrustIntensity * (0.98 + CGFloat(cos(currentTime * 17)) * 0.08)
             }
+        }
+        if let particles = player.childNode(withName: "//exhaustParticles") as? SKEmitterNode {
+            particles.particleBirthRate = isBoosting ? 108 * thrustIntensity : 0
+            particles.particleSpeed = 185 + 65 * thrustIntensity
         }
 
         boostTrailTimer -= TimeInterval(deltaTime)
@@ -1681,18 +1855,36 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         enemyTimer -= deltaTime
         fallingHazardTimer -= deltaTime
         powerUpTimer -= deltaTime
+        hazardSeparationTimer = max(0, hazardSeparationTimer - deltaTime)
 
         if obstacleTimer <= 0 {
-            spawnObstacleCourse()
-            obstacleTimer = max(1.85, 2.8 - runTime * 0.006)
+            if hazardSeparationTimer > 0 {
+                obstacleTimer = 0.35
+            } else {
+                spawnObstacleCourse()
+                hazardSeparationTimer = 1.10
+                obstacleTimer = max(1.85, 2.8 - runTime * 0.006)
+            }
         }
         if enemyTimer <= 0 {
-            spawnGlitchEnemy()
-            enemyTimer = max(3.0, Double.random(in: 4.0...5.4) - runTime * 0.004)
+            if hazardSeparationTimer > 0 {
+                enemyTimer = 0.35
+            } else {
+                spawnWorldEnemy()
+                hazardSeparationTimer = 1.10
+                enemyTimer = enemyShowcaseMode
+                    ? 999
+                    : max(3.0, Double.random(in: 4.0...5.4) - runTime * 0.004)
+            }
         }
         if fallingHazardTimer <= 0 {
-            spawnFallingHazard()
-            fallingHazardTimer = max(4.4, Double.random(in: 5.8...7.3) - runTime * 0.004)
+            if hazardSeparationTimer > 0 {
+                fallingHazardTimer = 0.35
+            } else {
+                spawnFallingHazard()
+                hazardSeparationTimer = 0.95
+                fallingHazardTimer = max(4.4, Double.random(in: 5.8...7.3) - runTime * 0.004)
+            }
         }
         if powerUpTimer <= 0 {
             spawnPowerUp()
@@ -1717,6 +1909,33 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             let pull = CGFloat(deltaTime) * 720
             chip.position.x += dx / distance * pull
             chip.position.y += dy / distance * pull
+        }
+    }
+
+    private func updateNearMisses() {
+        guard phase == .playing else { return }
+        for enemy in gameplayLayer.children where enemy.userData?["enemyKind"] != nil {
+            let alreadyChecked = enemy.userData?["nearMissChecked"] as? Bool ?? false
+            guard !alreadyChecked, enemy.position.x < player.position.x - 58 else { continue }
+            enemy.userData?["nearMissChecked"] = true
+
+            let verticalDistance = abs(enemy.position.y - player.position.y)
+            guard verticalDistance < 116 else {
+                nearMissStreak = 0
+                continue
+            }
+
+            nearMissStreak = min(5, nearMissStreak + 1)
+            let reward = 25 + nearMissStreak * 10
+            scoreValue += CGFloat(reward)
+            let sparkPoint = CGPoint(
+                x: (enemy.position.x + player.position.x) / 2,
+                y: (enemy.position.y + player.position.y) / 2
+            )
+            makeBurst(at: sparkPoint, colors: [currentWorld.accentColor, .white], count: 7)
+            showToast("NEAR MISS ×\(nearMissStreak)  +\(reward)", color: currentWorld.accentColor, duration: 0.72)
+            GameAudio.shared.play(.nearMiss)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.55)
         }
     }
 
@@ -1823,6 +2042,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
     private func hitHazard(_ hazard: SKNode, at point: CGPoint) {
         guard invulnerabilityTime <= 0 else { return }
+        hazard.userData?["nearMissChecked"] = true
+        nearMissStreak = 0
 
         if demoMode {
             if hazard.name != "boss" {
@@ -1883,10 +2104,14 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     }
 
     private func spawnBoostTrailSpark() {
+        guard let exhaust = player.childNode(withName: "//boosterExhaust") else { return }
+        let origin = exhaust.convert(CGPoint.zero, to: gameplayLayer)
+        let tail = exhaust.convert(CGPoint(x: -58, y: 0), to: gameplayLayer)
+        let travel = CGVector(dx: tail.x - origin.x, dy: tail.y - origin.y)
         let spark = SKShapeNode(circleOfRadius: CGFloat.random(in: 3.5...7.0))
         spark.position = CGPoint(
-            x: player.position.x - 72,
-            y: player.position.y + CGFloat.random(in: -11...11)
+            x: origin.x,
+            y: origin.y + CGFloat.random(in: -4...4)
         )
         spark.fillColor = Bool.random()
             ? selectedBooster.trailColor
@@ -1896,14 +2121,22 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         spark.glowWidth = 3
         spark.zPosition = -2
         gameplayLayer.addChild(spark)
-        spark.run(.sequence([
-            .group([
-                .moveBy(x: CGFloat.random(in: -62 ... -38), y: CGFloat.random(in: -12...12), duration: 0.34),
-                .fadeOut(withDuration: 0.34),
-                .scale(to: 0.15, duration: 0.34)
-            ]),
-            .removeFromParent()
-        ]))
+        let travelX = travel.dx * CGFloat.random(in: 0.72...1.08)
+        let travelY = travel.dy * CGFloat.random(in: 0.72...1.08) + CGFloat.random(in: -8...8)
+        let drift = SKAction.moveBy(x: travelX, y: travelY, duration: 0.34)
+        let disappear = SKAction.group([
+            drift,
+            .fadeOut(withDuration: 0.34),
+            .scale(to: 0.15, duration: 0.34)
+        ])
+        spark.run(.sequence([disappear, .removeFromParent()]))
+    }
+
+    private func configurePlayerDynamics() {
+        guard let particles = player.childNode(withName: "//exhaustParticles") as? SKEmitterNode else {
+            return
+        }
+        particles.targetNode = gameplayLayer
     }
 
     private func animatePlayerPickup(color: UIColor) {
