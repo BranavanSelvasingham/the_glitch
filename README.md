@@ -4,13 +4,14 @@ A native iPad arcade-flight game built with Swift and SpriteKit.
 
 ## Current playable
 
-- Hold anywhere to fire Aidan's booster and rise.
-- Release to fall.
+- Hold anywhere to fire Aidan's booster and climb; release to dive and charge Rush Energy.
+- When the meter fills, tap to trigger Star Rush: surge forward, pull in chips, and smash through hazards and Glitch creatures.
 - Follow a three-part story about Aidan, his booster, and The Glitch.
 - Fly through Cloud Kingdom, Dino Jungle, Candy Canyon, and Storybook Castle.
 - Outsmart four world-specific enemies: Cloud Swooper, Jungle Snapper, Candy Bouncer, and Castle Gargoyle.
-- Gather Spark Chips and collect shield-bubble and chip-magnet power-ups.
-- Earn a score bonus for skillful near misses, with dedicated visual, sound, and haptic feedback.
+- Chase curved Adventure Trails of Spark Chips and collect shield-bubble and chip-magnet power-ups.
+- Chain chips, close calls, and Star Rush smashes into a time-limited Flow multiplier worth up to 5×.
+- Earn score bonuses for skillful near misses and enemy smashes, with dedicated visual, sound, haptic, camera-shake, and impact feedback.
 - See animated boost/glide poses, physically aligned world-space booster exhaust, pickup reactions, lively enemies, and dedicated defeat and boss-victory sequences.
 - Defeat The Glitch in a booster-blast boss battle after completing all four worlds.
 - Permanently unlock and equip four richly illustrated booster styles with saved Spark Chips.

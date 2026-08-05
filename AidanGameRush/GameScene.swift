@@ -13,6 +13,14 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let chipLabel = SKLabelNode(fontNamed: "AvenirNext-Heavy")
     private let worldLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
     private let powerLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
+    private let rushMeterBackground = SKShapeNode(
+        rectOf: CGSize(width: 224, height: 10),
+        cornerRadius: 5
+    )
+    private let rushMeterFill = SKShapeNode(
+        rect: CGRect(x: 0, y: -4, width: 216, height: 8),
+        cornerRadius: 4
+    )
     private let scoreHUDPanel = SKShapeNode(rectOf: CGSize(width: 245, height: 92), cornerRadius: 24)
     private let worldHUDPanel = SKShapeNode(rectOf: CGSize(width: 360, height: 88), cornerRadius: 24)
     private let pauseButton = SKShapeNode()
@@ -54,6 +62,16 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private var boostTrailTimer: TimeInterval = 0
     private var hazardSeparationTimer: TimeInterval = 0
     private var nearMissStreak = 0
+    private var rushCharge: CGFloat = 0
+    private var starRushTime: TimeInterval = 0
+    private var rushTrailTimer: TimeInterval = 0
+    private var adventureTrailTimer: TimeInterval = 0
+    private var flowCombo = 0
+    private var flowComboTime: TimeInterval = 0
+    private var rushReadyAnnounced = false
+    private var adventureTrailIndex = 0
+    private var smashedThisRun = 0
+    private var highestFlowMultiplier = 1
     private var gameOverReady = false
 
     private var isBoosting = false
@@ -65,6 +83,10 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private let pausePreviewMode = ProcessInfo.processInfo.arguments.contains("--pause-preview")
     private let enemyShowcaseMode = ProcessInfo.processInfo.arguments.contains("--enemy-showcase")
     private let nearMissShowcaseMode = ProcessInfo.processInfo.arguments.contains("--near-miss-showcase")
+    private let rushShowcaseMode = ProcessInfo.processInfo.arguments.contains("--rush-showcase")
+    private let rushQualityDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
+        "--rush-quality-probe"
+    )
     private let persistenceDiagnosticMode = ProcessInfo.processInfo.arguments.contains(
         "--persistence-self-test"
     )
@@ -95,6 +117,11 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private var qualityProbeDidTriggerCrash = false
     private var qualityProbeDidRestart = false
     private var qualityProbeFinished = false
+    private var rushProbeRequestTime: TimeInterval?
+    private var rushProbeActivationMS: Double?
+    private var rushProbeStartTime: TimeInterval?
+    private var rushProbeDuration: TimeInterval?
+    private var rushProbeFinished = false
     #endif
 
     private let baseScrollSpeed: CGFloat = 235
@@ -185,8 +212,11 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     private var lowerFlightLimit: CGFloat { max(92, size.height * 0.18) }
     private var upperFlightLimit: CGFloat { size.height - max(82, size.height * 0.08) }
     private var currentScrollSpeed: CGFloat {
-        baseScrollSpeed + min(125, CGFloat(runTime) * 1.15)
+        baseScrollSpeed + min(125, CGFloat(runTime) * 1.15) + (isStarRushing ? 185 : 0)
     }
+    private var isStarRushing: Bool { starRushTime > 0 }
+    private var flowMultiplier: Int { min(5, 1 + flowCombo / 4) }
+    private var controlledRushMode: Bool { rushShowcaseMode || rushQualityDiagnosticMode }
     private var activeWorldDuration: TimeInterval {
         demoMode ? 5 : GameConstants.worldDuration
     }
@@ -599,7 +629,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             panel.addChild(villain)
         default:
             title = "RACE, RESCUE, RESTORE!"
-            body = "Hold to boost up. Release to glide down.\nGather chips, use shields and magnets, and outrun The Glitch!"
+            body = "Hold to climb. Dive to charge Rush Energy.\nWhen the meter is full, tap to smash through The Glitch's traps!"
             let chip = WorldArt.makeChip()
             chip.physicsBody = nil
             chip.position = CGPoint(x: -panel.frame.width * 0.31, y: 25)
@@ -747,6 +777,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         player.physicsBody?.categoryBitMask = PhysicsCategory.player
         player.childNode(withName: "shieldAura")?.isHidden = true
         player.childNode(withName: "magnetAura")?.isHidden = true
+        player.childNode(withName: "rushAura")?.isHidden = true
         player.childNode(withName: "//flame")?.isHidden = true
         (player.childNode(withName: "//exhaustParticles") as? SKEmitterNode)?.particleBirthRate = 0
         WorldArt.applyBoosterStyle(selectedBooster, to: player)
@@ -757,7 +788,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         scoreValue = 0
         runChips = 0
         worldStage = startingWorld
-        let isolatesEnemyFeedback = enemyShowcaseMode || nearMissShowcaseMode
+        let isolatesEnemyFeedback = enemyShowcaseMode || nearMissShowcaseMode || controlledRushMode
         obstacleTimer = isolatesEnemyFeedback ? 999 : GameConstants.initialObstacleDelay
         enemyTimer = nearMissShowcaseMode ? 999 : (enemyShowcaseMode ? 0.45 : 4.2)
         fallingHazardTimer = isolatesEnemyFeedback ? 999 : 6.3
@@ -771,7 +802,25 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         boostTrailTimer = 0
         hazardSeparationTimer = 0
         nearMissStreak = 0
+        rushCharge = controlledRushMode ? GameConstants.maximumRushCharge : 0
+        starRushTime = 0
+        rushTrailTimer = 0
+        adventureTrailTimer = isolatesEnemyFeedback ? 999 : 7.4
+        flowCombo = 0
+        flowComboTime = 0
+        rushReadyAnnounced = false
+        adventureTrailIndex = 0
+        smashedThisRun = 0
+        highestFlowMultiplier = 1
         gameOverReady = false
+        #if DEBUG
+        if rushQualityDiagnosticMode {
+            rushProbeActivationMS = nil
+            rushProbeStartTime = nil
+            rushProbeDuration = nil
+            rushProbeFinished = false
+        }
+        #endif
         hudLayer.childNode(withName: "bossBar")?.removeFromParent()
         isBoosting = false
         lastUpdateTime = 0
@@ -779,7 +828,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         setWorld(WorldTheme.allCases[startingWorld], announce: !isolatesEnemyFeedback)
         GameAudio.shared.playMusic(currentWorld.musicTheme)
         updateHUD()
-        showToast("HOLD TO BOOST  •  RELEASE TO GLIDE", color: .white, duration: 3.2)
+        showToast("HOLD TO CLIMB  •  DIVE TO CHARGE  •  TAP WHEN FULL", color: .white, duration: 3.8)
         ProgressStore.unlock(.firstFlight)
         GameAudio.shared.play(.begin)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -796,6 +845,21 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
                 .wait(forDuration: 0.85),
                 .run { [weak self] in self?.spawnNearMissShowcaseEnemy() }
             ]), withKey: "nearMissShowcase")
+        } else if controlledRushMode {
+            run(.sequence([
+                .wait(forDuration: 0.75),
+                .run { [weak self] in self?.spawnRushShowcaseTargets() },
+                .wait(forDuration: 0.55),
+                .run { [weak self] in
+                    guard let self else { return }
+                    #if DEBUG
+                    if self.rushQualityDiagnosticMode {
+                        self.rushProbeRequestTime = ProcessInfo.processInfo.systemUptime
+                    }
+                    #endif
+                    self.beginBoostInput(playHaptic: false)
+                }
+            ]), withKey: "rushShowcase")
         }
 
         #if DEBUG
@@ -828,6 +892,9 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         phase = .gameOver
         gameOverReady = false
         isBoosting = false
+        starRushTime = 0
+        player.removeAction(forKey: "starRushMotion")
+        player.childNode(withName: "rushAura")?.isHidden = true
         player.childNode(withName: "//flame")?.isHidden = true
         (player.childNode(withName: "//exhaustParticles") as? SKEmitterNode)?.particleBirthRate = 0
         player.physicsBody?.categoryBitMask = 0
@@ -1446,6 +1513,66 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         addMovingNode(powerUp)
     }
 
+    private func spawnAdventureTrail() {
+        let safeBottom = lowerFlightLimit + 72
+        let safeTop = upperFlightLimit - 72
+        let center = min(max(player.position.y, safeBottom + 80), safeTop - 80)
+        let pattern = adventureTrailIndex % 3
+        adventureTrailIndex += 1
+
+        for index in 0..<12 {
+            let progress = CGFloat(index) / 11
+            let offsetY: CGFloat
+            switch pattern {
+            case 0:
+                offsetY = sin(progress * .pi * 2) * 82
+            case 1:
+                offsetY = (abs(progress - 0.5) * 2 - 0.5) * 150
+            default:
+                offsetY = sin(progress * .pi) * 112 - 48
+            }
+
+            let chip = WorldArt.makeChip()
+            chip.position = CGPoint(
+                x: size.width + 110 + CGFloat(index) * 58,
+                y: min(max(center + offsetY, safeBottom), safeTop)
+            )
+            addMovingNode(chip)
+        }
+
+        showToast("ADVENTURE TRAIL  •  KEEP THE FLOW!", color: currentWorld.accentColor, duration: 1.05)
+    }
+
+    private func spawnRushShowcaseTargets() {
+        guard phase == .playing else { return }
+        let centerY = size.height * 0.50
+        let offsets: [CGFloat] = [0, 54, -46]
+
+        for index in 0..<3 {
+            let kind = EnemyKind.allCases[(currentWorld.rawValue + index) % EnemyKind.allCases.count]
+            let enemy = WorldArt.makeEnemy(kind)
+            enemy.position = CGPoint(
+                x: size.width * (0.52 + CGFloat(index) * 0.14),
+                y: centerY + offsets[index]
+            )
+            enemy.zPosition = 12
+            gameplayLayer.addChild(enemy)
+            enemy.run(.sequence([
+                .moveBy(x: -230, y: 0, duration: 4.0),
+                .removeFromParent()
+            ]))
+        }
+
+        for index in 0..<8 {
+            let chip = WorldArt.makeChip()
+            chip.position = CGPoint(
+                x: size.width * 0.48 + CGFloat(index) * 62,
+                y: centerY + sin(CGFloat(index) * 0.75) * 68
+            )
+            addMovingNode(chip)
+        }
+    }
+
     private func addMovingNode(_ node: SKNode) {
         let distance = node.position.x + 180
         let duration = TimeInterval(distance / currentScrollSpeed)
@@ -1492,7 +1619,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         runTime += deltaTime
         scoreValue += CGFloat(deltaTime) * (10 + min(10, CGFloat(runTime) * 0.05))
 
-        if nearMissShowcaseMode {
+        if nearMissShowcaseMode || controlledRushMode {
             player.position.y = size.height * 0.50
             verticalVelocity = 0
             isBoosting = false
@@ -1501,6 +1628,7 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             isBoosting = player.position.y < target
         }
 
+        updateFlowAndRush(deltaTime: deltaTime, currentTime: currentTime)
         updatePlayer(deltaTime: CGFloat(deltaTime), currentTime: currentTime)
         updateBackground(deltaTime: CGFloat(deltaTime), speed: currentScrollSpeed)
         if bossFightActive {
@@ -1783,8 +1911,13 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     #endif
 
     private func updatePlayer(deltaTime: CGFloat, currentTime: TimeInterval) {
-        let acceleration = isBoosting ? riseAcceleration : fallAcceleration
-        verticalVelocity += acceleration * deltaTime
+        let thrustActive = isBoosting || isStarRushing
+        if isStarRushing {
+            verticalVelocity *= max(0, 1 - deltaTime * 5.5)
+        } else {
+            let acceleration = isBoosting ? riseAcceleration : fallAcceleration
+            verticalVelocity += acceleration * deltaTime
+        }
         verticalVelocity = min(max(verticalVelocity, maximumFallSpeed), maximumRiseSpeed)
         player.position.y += verticalVelocity * deltaTime
 
@@ -1798,9 +1931,9 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
         player.zRotation = max(-0.32, min(0.34, verticalVelocity / 1_360))
         if let character = player.childNode(withName: "characterArt") {
-            let targetRotation: CGFloat = isBoosting ? 0.045 : -0.035
-            let targetXScale: CGFloat = isBoosting ? 1.035 : 0.985
-            let targetYScale: CGFloat = isBoosting ? 0.97 : 1.025
+            let targetRotation: CGFloat = isStarRushing ? 0.10 : (isBoosting ? 0.045 : -0.035)
+            let targetXScale: CGFloat = isStarRushing ? 1.08 : (isBoosting ? 1.035 : 0.985)
+            let targetYScale: CGFloat = isStarRushing ? 0.93 : (isBoosting ? 0.97 : 1.025)
             let blend = min(1, deltaTime * 9)
             character.zRotation += (targetRotation - character.zRotation) * blend
             character.xScale += (targetXScale - character.xScale) * blend
@@ -1808,31 +1941,41 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             character.position.y = 2 + CGFloat(sin(currentTime * 5.4)) * 1.8
         }
         if let booster = player.childNode(withName: "//nozzleRim") {
-            let pulse = isBoosting ? 1 + CGFloat(sin(currentTime * 20)) * 0.06 : 1
+            let pulse = thrustActive ? 1 + CGFloat(sin(currentTime * 20)) * 0.06 : 1
             booster.setScale(pulse)
         }
-        let thrustIntensity = isBoosting
-            ? 0.88 + min(0.24, max(0, -verticalVelocity) / 1_800)
+        let thrustIntensity = thrustActive
+            ? (isStarRushing ? 1.48 : 0.88 + min(0.24, max(0, -verticalVelocity) / 1_800))
             : 0
         if let flame = player.childNode(withName: "//flame") {
-            flame.isHidden = !isBoosting
-            if isBoosting {
+            flame.isHidden = !thrustActive
+            if thrustActive {
                 flame.yScale = thrustIntensity * (0.88 + CGFloat(sin(currentTime * 23)) * 0.12)
                 flame.xScale = thrustIntensity * (0.98 + CGFloat(cos(currentTime * 17)) * 0.08)
             }
         }
         if let particles = player.childNode(withName: "//exhaustParticles") as? SKEmitterNode {
-            particles.particleBirthRate = isBoosting ? 108 * thrustIntensity : 0
+            particles.particleBirthRate = thrustActive ? (isStarRushing ? 210 : 108) * thrustIntensity : 0
             particles.particleSpeed = 185 + 65 * thrustIntensity
+        }
+        if let rushAura = player.childNode(withName: "rushAura") {
+            rushAura.isHidden = !isStarRushing
+            if isStarRushing {
+                let pulse = 1 + CGFloat(sin(currentTime * 18)) * 0.055
+                rushAura.setScale(pulse)
+                rushAura.zRotation += deltaTime * 0.9
+            } else {
+                rushAura.setScale(1)
+            }
         }
 
         boostTrailTimer -= TimeInterval(deltaTime)
-        if isBoosting, boostTrailTimer <= 0 {
+        if thrustActive, boostTrailTimer <= 0 {
             spawnBoostTrailSpark()
-            boostTrailTimer = 0.055
+            boostTrailTimer = isStarRushing ? 0.025 : 0.055
         }
 
-        if invulnerabilityTime > 0 {
+        if invulnerabilityTime > 0, !isStarRushing {
             player.alpha = sin(currentTime * 24) > 0 ? 1 : 0.38
         } else {
             player.alpha = 1
@@ -1855,8 +1998,18 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         enemyTimer -= deltaTime
         fallingHazardTimer -= deltaTime
         powerUpTimer -= deltaTime
+        adventureTrailTimer -= deltaTime
         hazardSeparationTimer = max(0, hazardSeparationTimer - deltaTime)
 
+        if adventureTrailTimer <= 0 {
+            if hazardSeparationTimer > 0 {
+                adventureTrailTimer = 0.35
+            } else {
+                spawnAdventureTrail()
+                hazardSeparationTimer = 1.35
+                adventureTrailTimer = Double.random(in: 10.8...13.2)
+            }
+        }
         if obstacleTimer <= 0 {
             if hazardSeparationTimer > 0 {
                 obstacleTimer = 0.35
@@ -1892,6 +2045,210 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         }
     }
 
+    private func updateFlowAndRush(deltaTime: TimeInterval, currentTime: TimeInterval) {
+        if flowCombo > 0 {
+            flowComboTime = max(0, flowComboTime - deltaTime)
+            if flowComboTime == 0 {
+                flowCombo = 0
+            }
+        }
+
+        if isStarRushing {
+            let previousTime = starRushTime
+            starRushTime = max(0, starRushTime - deltaTime)
+            scoreValue += CGFloat(deltaTime) * CGFloat(18 * flowMultiplier)
+            rushTrailTimer -= deltaTime
+            if rushTrailTimer <= 0 {
+                spawnRushSpeedLine(at: currentTime)
+                rushTrailTimer = 0.035
+            }
+            if previousTime > 0, starRushTime == 0 {
+                finishStarRush()
+            }
+            return
+        }
+
+        guard !isBoosting, verticalVelocity < -135 else { return }
+        let descentRatio = min(1, abs(verticalVelocity) / abs(maximumFallSpeed))
+        addRushCharge(CGFloat(deltaTime) * (18 + descentRatio * 34))
+    }
+
+    private func addRushCharge(_ amount: CGFloat) {
+        guard amount > 0, !isStarRushing else { return }
+        rushCharge = min(GameConstants.maximumRushCharge, rushCharge + amount)
+        guard rushCharge >= GameConstants.maximumRushCharge, !rushReadyAnnounced else { return }
+
+        rushReadyAnnounced = true
+        showToast("STAR RUSH READY  •  TAP TO BLAST!", color: selectedBooster.trailColor, duration: 1.35)
+        GameAudio.shared.play(.rushReady)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        if demoMode, !controlledRushMode, !nearMissShowcaseMode, !enemyShowcaseMode {
+            run(.sequence([
+                .wait(forDuration: 0.45),
+                .run { [weak self] in
+                    guard
+                        let self,
+                        self.rushCharge >= GameConstants.maximumRushCharge,
+                        !self.isStarRushing
+                    else { return }
+                    self.startStarRush()
+                }
+            ]), withKey: "demoAutoRush")
+        }
+    }
+
+    private func advanceFlow(by amount: Int) {
+        flowCombo = min(20, flowCombo + amount)
+        flowComboTime = GameConstants.flowComboWindow
+        highestFlowMultiplier = max(highestFlowMultiplier, flowMultiplier)
+    }
+
+    private func startStarRush() {
+        guard !isStarRushing, rushCharge >= GameConstants.maximumRushCharge else { return }
+
+        rushCharge = 0
+        rushReadyAnnounced = false
+        starRushTime = GameConstants.starRushDuration
+        rushTrailTimer = 0
+        invulnerabilityTime = max(invulnerabilityTime, GameConstants.starRushDuration + 0.15)
+        isBoosting = true
+
+        #if DEBUG
+        if rushQualityDiagnosticMode {
+            let now = ProcessInfo.processInfo.systemUptime
+            rushProbeStartTime = now
+            if let requestTime = rushProbeRequestTime {
+                rushProbeActivationMS = (now - requestTime) * 1_000
+            }
+        }
+        #endif
+
+        player.childNode(withName: "rushAura")?.isHidden = false
+        player.removeAction(forKey: "starRushMotion")
+        let launch = SKAction.moveTo(x: size.width * 0.40, duration: 0.16)
+        launch.timingMode = .easeOut
+        let returnHome = SKAction.moveTo(x: size.width * 0.25, duration: 0.30)
+        returnHome.timingMode = .easeInEaseOut
+        player.run(.sequence([
+            launch,
+            .wait(forDuration: max(0, GameConstants.starRushDuration - 0.46)),
+            returnHome
+        ]), withKey: "starRushMotion")
+
+        makeBurst(
+            at: player.position,
+            colors: [selectedBooster.trailColor, currentWorld.accentColor, .white],
+            count: 24
+        )
+        showImpactFlash(color: selectedBooster.trailColor, alpha: 0.24)
+        shakeWorld(intensity: 9)
+        showToast("STAR RUSH!  •  SMASH THROUGH!", color: selectedBooster.trailColor, duration: 1.15)
+        GameAudio.shared.play(.starRush)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    private func finishStarRush() {
+        player.childNode(withName: "rushAura")?.isHidden = true
+        player.position.x = size.width * 0.25
+        #if DEBUG
+        if rushQualityDiagnosticMode, let startTime = rushProbeStartTime {
+            rushProbeDuration = ProcessInfo.processInfo.systemUptime - startTime
+            run(.sequence([
+                .wait(forDuration: 0.35),
+                .run { [weak self] in self?.showRushQualityDiagnosticScreen() }
+            ]))
+        }
+        #endif
+    }
+
+    #if DEBUG
+    private func showRushQualityDiagnosticScreen() {
+        guard
+            !rushProbeFinished,
+            let activationMS = rushProbeActivationMS,
+            let duration = rushProbeDuration
+        else { return }
+
+        rushProbeFinished = true
+        let survived = phase == .playing
+        let passed = activationMS <= 50
+            && (2.4...3.2).contains(duration)
+            && smashedThisRun >= 1
+            && highestFlowMultiplier >= 2
+            && survived
+
+        phase = .paused
+        gameplayLayer.isPaused = true
+        GameAudio.shared.stopMusic()
+        screenOverlay.removeAllChildren()
+
+        let backdrop = SKShapeNode(rect: CGRect(origin: .zero, size: size))
+        backdrop.fillColor = UIColor(red: 0.04, green: 0.08, blue: 0.17, alpha: 0.96)
+        backdrop.strokeColor = .clear
+        screenOverlay.addChild(backdrop)
+
+        let title = makeLabel(
+            passed ? "STAR RUSH PROBE: PASS" : "STAR RUSH PROBE: NEEDS WORK",
+            size: min(43, size.height * 0.08),
+            color: passed ? .systemGreen : .systemYellow
+        )
+        title.position = CGPoint(x: size.width / 2, y: size.height * 0.80)
+        screenOverlay.addChild(title)
+
+        let rows = [
+            String(format: "INPUT TO RUSH MODE       %.1f ms  (TARGET ≤50 ms)", activationMS),
+            String(format: "ATTACK WINDOW            %.2f s   (TARGET 2.4–3.2 s)", duration),
+            "HAZARDS SMASHED          \(smashedThisRun)       (TARGET ≥1)",
+            "HIGHEST FLOW MULTIPLIER  ×\(highestFlowMultiplier)      (TARGET ≥×2)",
+            "RUN SURVIVED             \(survived ? "PASS" : "FAIL")"
+        ]
+        for (index, row) in rows.enumerated() {
+            let label = makeLabel(row, size: min(19, size.height * 0.036), color: .white)
+            label.fontName = "Menlo-Bold"
+            label.position = CGPoint(
+                x: size.width / 2,
+                y: size.height * 0.62 - CGFloat(index) * min(48, size.height * 0.073)
+            )
+            screenOverlay.addChild(label)
+        }
+
+        let note = makeLabel(
+            "EXECUTABLE PATH CHECK  •  HUMAN EXCITEMENT STILL REQUIRES PLAYTESTING",
+            size: min(15, size.height * 0.028),
+            color: UIColor.white.withAlphaComponent(0.70)
+        )
+        note.position = CGPoint(x: size.width / 2, y: size.height * 0.16)
+        screenOverlay.addChild(note)
+    }
+    #endif
+
+    private func spawnRushSpeedLine(at currentTime: TimeInterval) {
+        let length = CGFloat.random(in: 90...220)
+        let path = CGMutablePath()
+        path.move(to: .zero)
+        path.addLine(to: CGPoint(x: length, y: 0))
+        let line = SKShapeNode(path: path)
+        line.position = CGPoint(
+            x: CGFloat.random(in: (player.position.x + 80)...(size.width + 20)),
+            y: CGFloat.random(in: lowerFlightLimit...upperFlightLimit)
+        )
+        line.strokeColor = Int(currentTime * 100).isMultiple(of: 2)
+            ? selectedBooster.trailColor
+            : .white
+        line.lineWidth = CGFloat.random(in: 2...5)
+        line.glowWidth = 3
+        line.alpha = CGFloat.random(in: 0.42...0.82)
+        line.zPosition = 4
+        gameplayLayer.addChild(line)
+        line.run(.sequence([
+            .group([
+                .moveBy(x: -size.width * 0.55, y: 0, duration: 0.24),
+                .fadeOut(withDuration: 0.24)
+            ]),
+            .removeFromParent()
+        ]))
+    }
+
     private func updatePowerUps(deltaTime: TimeInterval) {
         shieldTime = max(0, shieldTime - deltaTime)
         magnetTime = max(0, magnetTime - deltaTime)
@@ -1900,13 +2257,14 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         player.childNode(withName: "shieldAura")?.isHidden = shieldTime <= 0
         player.childNode(withName: "magnetAura")?.isHidden = magnetTime <= 0
 
-        guard magnetTime > 0 else { return }
+        guard magnetTime > 0 || isStarRushing else { return }
         for chip in gameplayLayer.children where chip.name == "chip" {
             let dx = player.position.x - chip.position.x
             let dy = player.position.y - chip.position.y
             let distance = max(1, hypot(dx, dy))
-            guard distance < size.width * 0.58 else { continue }
-            let pull = CGFloat(deltaTime) * 720
+            let attractionRange = isStarRushing ? size.width * 0.82 : size.width * 0.58
+            guard distance < attractionRange else { continue }
+            let pull = CGFloat(deltaTime) * (isStarRushing ? 1_180 : 720)
             chip.position.x += dx / distance * pull
             chip.position.y += dy / distance * pull
         }
@@ -1926,14 +2284,16 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
             }
 
             nearMissStreak = min(5, nearMissStreak + 1)
-            let reward = 25 + nearMissStreak * 10
+            advanceFlow(by: 2)
+            addRushCharge(24)
+            let reward = (25 + nearMissStreak * 10) * flowMultiplier
             scoreValue += CGFloat(reward)
             let sparkPoint = CGPoint(
                 x: (enemy.position.x + player.position.x) / 2,
                 y: (enemy.position.y + player.position.y) / 2
             )
             makeBurst(at: sparkPoint, colors: [currentWorld.accentColor, .white], count: 7)
-            showToast("NEAR MISS ×\(nearMissStreak)  +\(reward)", color: currentWorld.accentColor, duration: 0.72)
+            showToast("NEAR MISS ×\(nearMissStreak)  •  FLOW ×\(flowMultiplier)  +\(reward)", color: currentWorld.accentColor, duration: 0.90)
             GameAudio.shared.play(.nearMiss)
             UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.55)
         }
@@ -1984,7 +2344,9 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         chip.removeFromParent()
         runChips += 1
         lifetimeChips += 1
-        scoreValue += 25
+        advanceFlow(by: 1)
+        addRushCharge(8)
+        scoreValue += CGFloat(25 * flowMultiplier)
         GameSaveStore.lifetimeChips = lifetimeChips
 
         let dailyResult = ProgressStore.addDailyChip()
@@ -2021,7 +2383,9 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
         let position = node.position
         node.removeFromParent()
-        scoreValue += 50
+        advanceFlow(by: 2)
+        addRushCharge(18)
+        scoreValue += CGFloat(50 * flowMultiplier)
 
         switch kind {
         case .shield:
@@ -2041,6 +2405,14 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     }
 
     private func hitHazard(_ hazard: SKNode, at point: CGPoint) {
+        if isStarRushing {
+            if hazard.name == "boss" {
+                ramBoss(at: point)
+            } else {
+                smashHazard(hazard, at: point)
+            }
+            return
+        }
         guard invulnerabilityTime <= 0 else { return }
         hazard.userData?["nearMissChecked"] = true
         nearMissStreak = 0
@@ -2067,6 +2439,52 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         } else {
             makeBurst(at: player.position, colors: [WorldArt.glitchPink, .white], count: 22)
             endRun()
+        }
+    }
+
+    private func smashHazard(_ hazard: SKNode, at point: CGPoint) {
+        guard hazard.parent != nil else { return }
+        hazard.userData?["nearMissChecked"] = true
+        hazard.physicsBody = nil
+        hazard.removeAllActions()
+        hazard.removeFromParent()
+
+        advanceFlow(by: 3)
+        smashedThisRun += 1
+        let reward = 70 * flowMultiplier
+        scoreValue += CGFloat(reward)
+        makeBurst(
+            at: point,
+            colors: [selectedBooster.trailColor, currentWorld.accentColor, .white],
+            count: 20
+        )
+        showImpactFlash(color: currentWorld.accentColor, alpha: 0.15)
+        shakeWorld(intensity: 6)
+        showToast("SMASH!  •  FLOW ×\(flowMultiplier)  +\(reward)", color: currentWorld.accentColor, duration: 0.65)
+        GameAudio.shared.play(.smash)
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 0.82)
+    }
+
+    private func ramBoss(at point: CGPoint) {
+        guard bossFightActive, bossHealth > 0 else { return }
+        bossHealth = max(0, bossHealth - 2)
+        advanceFlow(by: 3)
+        let reward = 140 * flowMultiplier
+        scoreValue += CGFloat(reward)
+        updateBossBar()
+        makeBurst(at: point, colors: [selectedBooster.trailColor, WorldArt.glitchPink, .white], count: 28)
+        showImpactFlash(color: WorldArt.glitchPink, alpha: 0.20)
+        shakeWorld(intensity: 11)
+        showToast("RUSH HIT!  •  THE GLITCH -2", color: WorldArt.glitchPink, duration: 0.85)
+        GameAudio.shared.play(.smash)
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(intensity: 1)
+
+        bossNode?.run(.sequence([
+            .fadeAlpha(to: 0.18, duration: 0.06),
+            .fadeAlpha(to: 1, duration: 0.10)
+        ]))
+        if bossHealth == 0 {
+            defeatBoss()
         }
     }
 
@@ -2100,6 +2518,33 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
                 ]),
                 .removeFromParent()
             ]))
+        }
+    }
+
+    private func showImpactFlash(color: UIColor, alpha: CGFloat) {
+        let flash = SKShapeNode(rect: CGRect(origin: .zero, size: size))
+        flash.fillColor = color
+        flash.strokeColor = .clear
+        flash.alpha = alpha
+        flash.zPosition = 88
+        hudLayer.addChild(flash)
+        flash.run(.sequence([
+            .fadeOut(withDuration: 0.18),
+            .removeFromParent()
+        ]))
+    }
+
+    private func shakeWorld(intensity: CGFloat) {
+        let offsets = [
+            CGPoint(x: intensity, y: -intensity * 0.45),
+            CGPoint(x: -intensity * 0.75, y: intensity * 0.55),
+            CGPoint(x: intensity * 0.45, y: intensity * 0.25),
+            .zero
+        ]
+        for layer in [backgroundLayer, gameplayLayer] {
+            layer.removeAction(forKey: "impactShake")
+            layer.position = .zero
+            layer.run(.sequence(offsets.map { .move(to: $0, duration: 0.035) }), withKey: "impactShake")
         }
     }
 
@@ -2258,6 +2703,10 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
     }
 
     private func beginBoostInput(playHaptic: Bool) {
+        if rushCharge >= GameConstants.maximumRushCharge, !isStarRushing {
+            startStarRush()
+            return
+        }
         isBoosting = true
         if playHaptic {
             UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.5)
@@ -2299,6 +2748,18 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         powerLabel.verticalAlignmentMode = .center
         hudLayer.addChild(powerLabel)
 
+        rushMeterBackground.fillColor = UIColor.black.withAlphaComponent(0.46)
+        rushMeterBackground.strokeColor = UIColor.white.withAlphaComponent(0.38)
+        rushMeterBackground.lineWidth = 1.5
+        rushMeterBackground.zPosition = 0
+        hudLayer.addChild(rushMeterBackground)
+
+        rushMeterFill.fillColor = selectedBooster.trailColor
+        rushMeterFill.strokeColor = .clear
+        rushMeterFill.zPosition = 1
+        rushMeterFill.xScale = 0
+        hudLayer.addChild(rushMeterFill)
+
         let path = CGPath(
             roundedRect: CGRect(x: -28, y: -24, width: 56, height: 48),
             cornerWidth: 13,
@@ -2332,6 +2793,8 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
         scoreHUDPanel.position = CGPoint(x: 137, y: size.height - 52)
         worldLabel.position = CGPoint(x: size.width / 2, y: size.height - 35)
         powerLabel.position = CGPoint(x: size.width / 2, y: size.height - 64)
+        rushMeterBackground.position = CGPoint(x: size.width / 2, y: size.height - 82)
+        rushMeterFill.position = CGPoint(x: size.width / 2 - 108, y: size.height - 82)
         worldHUDPanel.position = CGPoint(x: size.width / 2, y: size.height - 50)
         pauseButton.position = CGPoint(x: size.width - 48, y: size.height - 43)
         soundButton.position = CGPoint(x: size.width - 162, y: size.height - 43)
@@ -2344,17 +2807,35 @@ final class GameScene: SKScene, @MainActor SKPhysicsContactDelegate {
 
     private func updateHUD() {
         scoreLabel.text = "SCORE  \(String(format: "%04d", Int(scoreValue)))"
-        chipLabel.text = "★  \(runChips)"
+        chipLabel.text = flowCombo > 0
+            ? "★  \(runChips)   •   FLOW ×\(flowMultiplier)"
+            : "★  \(runChips)"
         worldLabel.text = currentWorld.name
 
-        if shieldTime > 0 {
+        let displayedRush = isStarRushing
+            ? starRushTime / GameConstants.starRushDuration
+            : rushCharge / GameConstants.maximumRushCharge
+        let rushRatio = max(0, min(1, displayedRush))
+        rushMeterFill.xScale = rushRatio
+        rushMeterFill.fillColor = isStarRushing
+            ? .white
+            : (rushRatio >= 1 ? currentWorld.accentColor : selectedBooster.trailColor)
+
+        if isStarRushing {
+            powerLabel.text = String(format: "STAR RUSH  %.1fs", starRushTime)
+            powerLabel.fontColor = .white
+        } else if rushRatio >= 1 {
+            powerLabel.text = "STAR RUSH READY  •  TAP"
+            powerLabel.fontColor = currentWorld.accentColor
+        } else if shieldTime > 0 {
             powerLabel.text = "SHIELD  \(Int(ceil(shieldTime)))s"
             powerLabel.fontColor = WorldArt.glitchBlue
         } else if magnetTime > 0 {
             powerLabel.text = "MAGNET  \(Int(ceil(magnetTime)))s"
             powerLabel.fontColor = UIColor(red: 1, green: 0.86, blue: 0.20, alpha: 1)
         } else {
-            powerLabel.text = ""
+            powerLabel.text = "DIVE ENERGY  \(Int(rushRatio * 100))%"
+            powerLabel.fontColor = .white
         }
     }
 

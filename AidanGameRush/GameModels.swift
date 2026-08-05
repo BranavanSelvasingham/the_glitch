@@ -175,4 +175,7 @@ enum GameConstants {
     static let initialPowerUpDelay: TimeInterval = 8.2
     static let minimumObstacleGap: CGFloat = 245
     static let playerCollisionRadius: CGFloat = 35
+    static let maximumRushCharge: CGFloat = 100
+    static let starRushDuration: TimeInterval = 2.65
+    static let flowComboWindow: TimeInterval = 2.4
 }

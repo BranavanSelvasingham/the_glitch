@@ -184,6 +184,24 @@ enum WorldArt {
         magnetAura.zPosition = -5
         player.addChild(magnetAura)
 
+        let rushAura = SKShapeNode(ellipseOf: CGSize(width: 244, height: 148))
+        rushAura.name = "rushAura"
+        rushAura.fillColor = UIColor.white.withAlphaComponent(0.13)
+        rushAura.strokeColor = glitchBlue
+        rushAura.lineWidth = 6
+        rushAura.glowWidth = 12
+        rushAura.isHidden = true
+        rushAura.zPosition = -3.5
+        player.addChild(rushAura)
+
+        let rushRing = SKShapeNode(ellipseOf: CGSize(width: 218, height: 126))
+        rushRing.name = "rushRing"
+        rushRing.fillColor = .clear
+        rushRing.strokeColor = UIColor.white.withAlphaComponent(0.88)
+        rushRing.lineWidth = 2
+        rushRing.glowWidth = 4
+        rushAura.addChild(rushRing)
+
         player.physicsBody = SKPhysicsBody(
             circleOfRadius: GameConstants.playerCollisionRadius,
             center: CGPoint(x: 0, y: 3)
@@ -207,6 +225,9 @@ enum WorldArt {
         }
         if let particles = player.childNode(withName: "//exhaustParticles") as? SKEmitterNode {
             particles.particleColor = style.trailColor
+        }
+        if let rushAura = player.childNode(withName: "rushAura") as? SKShapeNode {
+            rushAura.strokeColor = style.trailColor
         }
     }
 
